@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO)
 # ================================================================
 #   ⚙️  CONFIG — হোস্টিং করার আগে এখানে সব বসিয়ে নিন (এই একটা জায়গাতেই)
 # ================================================================
-BOT_TOKEN          = os.environ.get("BOT_TOKEN") or "8970348269:AAEE2by9aAGyM4PYsj6pG74hDXASZXwoNP4"
+BOT_TOKEN          = os.environ.get("BOT_TOKEN") or "8970348269:AAE-NUYwaH1CJ3vWutbfk2qnb1brzn3iwmA"
 ADMIN_ID           = 7163496323
 SUPPORT_USERNAME   = "BDincometvadmin_sakib"
 REQUIRED_CHANNELS  = [
