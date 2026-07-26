@@ -38,7 +38,7 @@ LINE = "━━━━━━━━━━━━━━━━━━━━━━"
 # Mini App (Telegram Web App) URL — Render-এ deploy করার পর যেই HTTPS URL
 # পাবেন (যেমন https://ns-coin-3.onrender.com) তার সাথে "/webapp" জুড়ে বসান।
 # Telegram Web App বাটনের জন্য HTTPS বাধ্যতামূলক — Render নিজেই এটা দেয়।
-WEBAPP_BASE_URL = "https://PUT_YOUR_RENDER_URL_HERE.onrender.com"
+WEBAPP_BASE_URL = "https://st-earn.onrender.com"
 
 DEFAULT_AD_LINK = "https://example.com/your-ad-smartlink"
 
