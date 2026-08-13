@@ -1,1704 +1,2268 @@
+/* =========================================================
+   ST EARN MINI APP - SAFE FRONTEND
+   ========================================================= */
+
 "use strict";
 
-const tg = window.Telegram?.WebApp;
+const API = "/api";
 
 const state = {
-  config: null,
-  me: null,
-  tasks: [],
-  referrals: [],
-  withdrawals: [],
-  adminSettings: null,
-  adminThemes: {},
-  isAdmin: false,
-  selectedTask: null,
-  openedTask: false,
-  currentPage: "homePage"
+    initData: "",
+    user: null,
+    isAdmin: false,
+    config: null,
+    settings: null,
+    tasks: [],
+    withdrawals: [],
+    referrals: [],
+    selectedTask: null
 };
 
-const $ = (id) => document.getElementById(id);
 
-const api = async (url, options = {}) => {
-  const headers = {
-    "Content-Type": "application/json",
-    ...(options.headers || {})
-  };
+/* =========================================================
+   HELPERS
+========================================================= */
 
-  if (tg?.initData) {
-    headers["X-Telegram-Init-Data"] = tg.initData;
-  }
+function $(id) {
+    return document.getElementById(id);
+}
 
-  const response = await fetch(url, {
-    ...options,
-    headers
-  });
+function on(id, event, callback) {
+    const el = $(id);
 
-  let data = {};
+    if (!el) {
+        console.warn("ST Earn: Missing element #" + id);
+        return;
+    }
 
-  try {
-    data = await response.json();
-  } catch {
-    data = {};
-  }
+    el.addEventListener(event, callback);
+}
 
-  if (!response.ok) {
-    throw new Error(data.error || `Request failed (${response.status})`);
-  }
+function qs(selector) {
+    return document.querySelector(selector);
+}
 
-  return data;
-};
-
-function showToast(message) {
-  $("toastText").textContent = message;
-  $("toast").classList.add("show");
-
-  clearTimeout(showToast.timer);
-
-  showToast.timer = setTimeout(() => {
-    $("toast").classList.remove("show");
-  }, 2500);
+function qsa(selector) {
+    return document.querySelectorAll(selector);
 }
 
 function money(value) {
-  return Number(value || 0).toFixed(2);
+    const n = Number(value || 0);
+
+    return n.toFixed(2);
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+function escapeHTML(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
-function taskIcon(type) {
-  const icons = {
-    visit: "🌐",
-    watch: "▶",
-    telegram: "✈",
-    custom: "✓"
-  };
+function showToast(message) {
 
-  return icons[type] || "✓";
-}
+    let toast = $("toast");
 
-function applyTheme(theme) {
-  if (!theme) return;
+    if (!toast) {
 
-  document.documentElement.style.setProperty(
-    "--primary",
-    theme.primary
-  );
+        toast = document.createElement("div");
 
-  document.documentElement.style.setProperty(
-    "--primary-2",
-    theme.secondary
-  );
+        toast.id = "toast";
 
-  document.documentElement.style.setProperty(
-    "--bg",
-    theme.background
-  );
+        toast.style.position = "fixed";
+        toast.style.left = "50%";
+        toast.style.bottom = "25px";
+        toast.style.transform = "translateX(-50%)";
+        toast.style.zIndex = "99999";
+        toast.style.padding = "12px 18px";
+        toast.style.borderRadius = "14px";
+        toast.style.background = "#15181d";
+        toast.style.color = "#fff";
+        toast.style.boxShadow =
+            "0 10px 30px rgba(0,0,0,.35)";
+        toast.style.fontSize = "14px";
+        toast.style.maxWidth = "85%";
+        toast.style.textAlign = "center";
 
-  document.documentElement.style.setProperty(
-    "--card",
-    theme.card
-  );
-
-  document.documentElement.style.setProperty(
-    "--text",
-    theme.text
-  );
-
-  document.documentElement.style.setProperty(
-    "--muted",
-    theme.muted
-  );
-}
-
-function telegramSetup() {
-  if (!tg) return;
-
-  tg.ready();
-  tg.expand();
-
-  try {
-    tg.setHeaderColor(
-      state.me?.themeData?.background || "#0d0f12"
-    );
-
-    tg.setBackgroundColor(
-      state.me?.themeData?.background || "#0d0f12"
-    );
-  } catch {}
-
-  tg.BackButton?.onClick(() => {
-    if (state.currentPage !== "homePage") {
-      showPage("homePage");
-    } else {
-      closeAllSheets();
+        document.body.appendChild(toast);
     }
-  });
+
+    toast.textContent = message;
+
+    toast.style.display = "block";
+
+    clearTimeout(window.__toastTimer);
+
+    window.__toastTimer = setTimeout(() => {
+        toast.style.display = "none";
+    }, 2500);
 }
+
+
+/* =========================================================
+   TELEGRAM
+========================================================= */
+
+function telegram() {
+
+    if (
+        window.Telegram &&
+        window.Telegram.WebApp
+    ) {
+        return window.Telegram.WebApp;
+    }
+
+    return null;
+}
+
+
+function initTelegram() {
+
+    const tg = telegram();
+
+    if (!tg) {
+        console.warn(
+            "Telegram WebApp SDK not detected."
+        );
+        return;
+    }
+
+    try {
+        tg.ready();
+        tg.expand();
+    } catch (e) {
+        console.warn(e);
+    }
+
+    state.initData = tg.initData || "";
+
+    if (tg.initDataUnsafe?.user) {
+
+        state.telegramUser =
+            tg.initDataUnsafe.user;
+    }
+}
+
+
+/* =========================================================
+   API
+========================================================= */
+
+async function api(
+    endpoint,
+    options = {}
+) {
+
+    const headers = {
+        "Content-Type":
+            "application/json",
+        ...(options.headers || {})
+    };
+
+    if (state.initData) {
+
+        headers[
+            "X-Telegram-Init-Data"
+        ] = state.initData;
+    }
+
+    const response = await fetch(
+        API + endpoint,
+        {
+            ...options,
+            headers
+        }
+    );
+
+    let data = {};
+
+    try {
+        data = await response.json();
+    } catch {
+        data = {};
+    }
+
+    if (!response.ok) {
+
+        throw new Error(
+            data.error ||
+            "Something went wrong."
+        );
+    }
+
+    return data;
+}
+
+
+/* =========================================================
+   CONFIG
+========================================================= */
 
 async function loadConfig() {
-  state.config = await api("/api/config");
 
-  $("announcementText").textContent =
-    state.config.announcement || "";
+    try {
 
-  document.title =
-    state.config.appName || "ST Earn";
+        state.config =
+            await api("/config");
 
-  if (state.config.logoUrl) {
-    $("profileAvatar").innerHTML =
-      `<img src="${escapeHtml(state.config.logoUrl)}" alt="Logo">`;
-  }
+        applyConfig();
 
-  buildThemeList(
-    state.config.themes || {},
-    state.config.allowUserTheme
-  );
-}
+    } catch (e) {
 
-async function loadMe() {
-  const data = await api("/api/me");
+        console.error(e);
 
-  state.me = data.user;
-  state.isAdmin = Boolean(data.isAdmin);
-
-  applyTheme(data.themeData);
-
-  const name =
-    state.me.firstName ||
-    state.me.username ||
-    "User";
-
-  $("profileName").textContent = name;
-
-  $("profileAvatar").textContent =
-    name.charAt(0).toUpperCase();
-
-  if (state.config?.logoUrl) {
-    $("profileAvatar").innerHTML =
-      `<img src="${escapeHtml(state.config.logoUrl)}" alt="Logo">`;
-  }
-
-  updateBalanceUI();
-
-  document
-    .querySelectorAll(".admin-only")
-    .forEach((el) => {
-      el.style.display = state.isAdmin ? "" : "none";
-    });
-
-  if (state.isAdmin) {
-    $("themeHint").textContent =
-      "Choose or manage appearance";
-  }
-}
-
-function updateBalanceUI() {
-  if (!state.me) return;
-
-  $("balance").textContent =
-    money(state.me.balance);
-
-  $("walletBalance").textContent =
-    money(state.me.balance);
-
-  $("totalEarned").textContent =
-    `${money(state.me.totalEarned)} USDT`;
-
-  $("tasksDone").textContent =
-    state.me.tasksDone || 0;
-
-  $("statEarned").textContent =
-    money(state.me.totalEarned);
-
-  $("statTasks").textContent =
-    state.me.tasksDone || 0;
-
-  $("statReferrals").textContent =
-    state.me.referrals || 0;
-
-  $("referralCount").textContent =
-    state.me.referrals || 0;
-}
-
-async function refreshAll() {
-  try {
-    await loadMe();
-    await loadTasks();
-    await loadWithdrawals();
-    await loadReferrals();
-
-    if (state.isAdmin) {
-      await loadAdminSettings();
-    }
-
-    showToast("Updated successfully");
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-async function loadTasks() {
-  const data = await api("/api/tasks");
-
-  state.tasks = data.tasks || [];
-
-  renderTasks();
-}
-
-function renderTasks() {
-  const container = $("taskList");
-
-  if (!state.tasks.length) {
-    container.innerHTML =
-      `<div class="empty-state">No tasks available right now.</div>`;
-    return;
-  }
-
-  container.innerHTML = state.tasks
-    .map((task) => {
-      const completed = Boolean(task.completed);
-
-      return `
-        <div class="task-card">
-
-          <div class="task-icon">
-            ${taskIcon(task.taskType)}
-          </div>
-
-          <div class="task-content">
-
-            <strong>
-              ${escapeHtml(task.title)}
-            </strong>
-
-            <p>
-              ${escapeHtml(task.description || "Complete this task and earn reward.")}
-            </p>
-
-            <span class="task-reward">
-              +${money(task.reward)} USDT
-            </span>
-
-          </div>
-
-          <button
-            class="task-action ${completed ? "done" : ""}"
-            data-task-id="${task.id}"
-            ${completed ? "disabled" : ""}
-          >
-            ${completed ? "Done" : "Start"}
-          </button>
-
-        </div>
-      `;
-    })
-    .join("");
-
-  container
-    .querySelectorAll("[data-task-id]")
-    .forEach((button) => {
-      button.addEventListener("click", () => {
-        const id = Number(button.dataset.taskId);
-        openTask(id);
-      });
-    });
-}
-
-function openTask(id) {
-  const task = state.tasks.find(
-    (item) => Number(item.id) === Number(id)
-  );
-
-  if (!task) return;
-
-  state.selectedTask = task;
-  state.openedTask = false;
-
-  $("taskModalTitle").textContent =
-    task.title;
-
-  $("taskModalDescription").textContent =
-    task.description ||
-    "Complete this task to receive your reward.";
-
-  $("taskModalIcon").textContent =
-    taskIcon(task.taskType);
-
-  $("taskCompleteButton").disabled = true;
-  $("taskCompleteButton").style.opacity = ".5";
-
-  $("taskOpenButton").textContent =
-    task.url ? "Open Task" : "Start Task";
-
-  $("taskModalOverlay").classList.add("show");
-}
-
-function closeTaskModal() {
-  $("taskModalOverlay").classList.remove("show");
-  state.selectedTask = null;
-}
-
-async function completeSelectedTask() {
-  const task = state.selectedTask;
-
-  if (!task) return;
-
-  try {
-    const data = await api(
-      `/api/tasks/${task.id}/complete`,
-      {
-        method: "POST",
-        body: JSON.stringify({})
-      }
-    );
-
-    showToast(
-      `+${money(data.reward)} USDT earned!`
-    );
-
-    closeTaskModal();
-
-    await loadMe();
-    await loadTasks();
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-function openSelectedTask() {
-  const task = state.selectedTask;
-
-  if (!task) return;
-
-  state.openedTask = true;
-
-  if (task.url) {
-    if (tg?.openLink) {
-      tg.openLink(task.url);
-    } else {
-      window.open(task.url, "_blank");
-    }
-  }
-
-  $("taskCompleteButton").disabled = false;
-  $("taskCompleteButton").style.opacity = "1";
-
-  showToast(
-    "Task opened. Complete it, then claim reward."
-  );
-}
-
-async function loadWithdrawals() {
-  const data = await api("/api/withdrawals");
-
-  state.withdrawals = data.withdrawals || [];
-
-  renderWithdrawals();
-}
-
-function renderWithdrawals() {
-  const container = $("withdrawalHistory");
-
-  if (!state.withdrawals.length) {
-    container.innerHTML =
-      `<div class="empty-state">No withdrawals yet.</div>`;
-    return;
-  }
-
-  container.innerHTML = state.withdrawals
-    .map((item) => {
-      const date = item.created_at
-        ? new Date(item.created_at).toLocaleString()
-        : "";
-
-      return `
-        <div class="history-item">
-
-          <div>
-            <strong>
-              ${money(item.amount)} USDT
-            </strong>
-
-            <small>
-              ${escapeHtml(item.network || "")}
-              · ${escapeHtml(date)}
-            </small>
-          </div>
-
-          <span class="status ${escapeHtml(item.status)}">
-            ${escapeHtml(item.status)}
-          </span>
-
-        </div>
-      `;
-    })
-    .join("");
-}
-
-async function submitWithdrawal() {
-  const amount = Number(
-    $("withdrawAmount").value
-  );
-
-  const network =
-    $("withdrawNetwork").value.trim();
-
-  const address =
-    $("withdrawAddress").value.trim();
-
-  if (!amount || amount <= 0) {
-    showToast("Enter a valid amount");
-    return;
-  }
-
-  if (!network || !address) {
-    showToast("Complete all withdrawal fields");
-    return;
-  }
-
-  try {
-    await api("/api/withdrawals", {
-      method: "POST",
-      body: JSON.stringify({
-        amount,
-        network,
-        address
-      })
-    });
-
-    $("withdrawAmount").value = "";
-    $("withdrawNetwork").value = "";
-    $("withdrawAddress").value = "";
-
-    showToast("Withdrawal request submitted");
-
-    await loadMe();
-    await loadWithdrawals();
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-async function loadReferrals() {
-  const data = await api("/api/referrals");
-
-  state.referrals = data.referrals || [];
-
-  renderReferrals();
-}
-
-function renderReferrals() {
-  const container = $("referralList");
-
-  if (!state.referrals.length) {
-    container.innerHTML =
-      `<div class="empty-state">No referrals yet.</div>`;
-    return;
-  }
-
-  container.innerHTML = state.referrals
-    .map((item) => {
-      const name =
-        item.first_name ||
-        item.username ||
-        "Telegram User";
-
-      return `
-        <div class="history-item">
-
-          <div>
-            <strong>
-              ${escapeHtml(name)}
-            </strong>
-
-            <small>
-              ${item.username ? "@" + escapeHtml(item.username) : "Telegram user"}
-            </small>
-          </div>
-
-          <span class="status paid">
-            Joined
-          </span>
-
-        </div>
-      `;
-    })
-    .join("");
-}
-
-function inviteFriends() {
-  const botUsername =
-    state.config?.telegramChannel ||
-    "";
-
-  let link = "";
-
-  if (botUsername) {
-    const clean =
-      botUsername.replace(/^@/, "");
-
-    link =
-      `https://t.me/${clean}`;
-  } else {
-    link =
-      window.location.href;
-  }
-
-  const text =
-    "Join ST Earn and start earning!";
-
-  const share =
-    `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
-
-  if (tg?.openTelegramLink) {
-    tg.openTelegramLink(share);
-  } else {
-    window.open(share, "_blank");
-  }
-}
-
-/* ============================
-   NAVIGATION
-============================ */
-
-function showPage(pageId) {
-  const target = $(pageId);
-
-  if (!target) return;
-
-  document
-    .querySelectorAll(".page")
-    .forEach((page) => {
-      page.classList.remove("active");
-    });
-
-  target.classList.add("active");
-
-  document
-    .querySelectorAll(".nav")
-    .forEach((nav) => {
-      nav.classList.toggle(
-        "active",
-        nav.dataset.page === pageId
-      );
-    });
-
-  state.currentPage = pageId;
-
-  closeAllSheets();
-
-  if (pageId === "tasksPage") {
-    loadTasks().catch((e) => showToast(e.message));
-  }
-
-  if (pageId === "walletPage") {
-    loadWithdrawals().catch((e) =>
-      showToast(e.message)
-    );
-  }
-
-  if (pageId === "referralsPage") {
-    loadReferrals().catch((e) =>
-      showToast(e.message)
-    );
-  }
-
-  if (pageId === "adminPage" && state.isAdmin) {
-    loadAdminSettings().catch((e) =>
-      showToast(e.message)
-    );
-  }
-
-  if (tg?.BackButton) {
-    if (pageId === "homePage") {
-      tg.BackButton.hide();
-    } else {
-      tg.BackButton.show();
-    }
-  }
-}
-
-/* ============================
-   BOTTOM SHEET
-============================ */
-
-function openMenuSheet() {
-  $("sheetOverlay").classList.add("show");
-  $("bottomSheet").classList.add("show");
-}
-
-function closeMenuSheet() {
-  $("sheetOverlay").classList.remove("show");
-  $("bottomSheet").classList.remove("show");
-}
-
-function openThemeSheet() {
-  if (
-    state.config &&
-    !state.config.allowUserTheme
-  ) {
-    showToast(
-      "Theme changing is disabled by admin"
-    );
-    return;
-  }
-
-  closeMenuSheet();
-
-  $("themeOverlay").classList.add("show");
-  $("themeSheet").classList.add("show");
-}
-
-function closeThemeSheet() {
-  $("themeOverlay").classList.remove("show");
-  $("themeSheet").classList.remove("show");
-}
-
-function closeAllSheets() {
-  closeMenuSheet();
-  closeThemeSheet();
-}
-
-function buildThemeList(themes, enabled) {
-  const container = $("themeList");
-
-  const entries = Object.entries(themes);
-
-  if (!entries.length) {
-    container.innerHTML =
-      `<div class="empty-state">No themes available.</div>`;
-    return;
-  }
-
-  container.innerHTML = entries
-    .map(([key, theme]) => {
-      return `
-        <button
-          class="theme-option"
-          data-theme="${escapeHtml(key)}"
-        >
-
-          <div
-            class="theme-preview"
-            style="
-              background:
-                linear-gradient(
-                  135deg,
-                  ${theme.primary},
-                  ${theme.secondary}
-                );
-            "
-          ></div>
-
-          <strong>
-            ${escapeHtml(theme.name)}
-          </strong>
-
-          <small>
-            ${enabled ? "Available" : "Admin controlled"}
-          </small>
-
-        </button>
-      `;
-    })
-    .join("");
-
-  container
-    .querySelectorAll("[data-theme]")
-    .forEach((button) => {
-      button.addEventListener("click", () => {
-        changeUserTheme(
-          button.dataset.theme
+        showToast(
+            "Unable to load app configuration."
         );
-      });
-    });
+    }
 }
 
-async function changeUserTheme(theme) {
-  if (
-    !state.config?.allowUserTheme
-  ) {
-    showToast(
-      "Admin has disabled user themes"
-    );
-    return;
-  }
 
-  try {
-    await api("/api/theme", {
-      method: "POST",
-      body: JSON.stringify({ theme })
-    });
+function applyConfig() {
 
-    closeThemeSheet();
+    const c = state.config;
 
-    await loadMe();
-
-    showToast("Theme updated");
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-/* ============================
-   ADMIN SETTINGS
-============================ */
-
-async function loadAdminSettings() {
-  if (!state.isAdmin) return;
-
-  const data = await api(
-    "/api/admin/settings"
-  );
-
-  state.adminSettings = data.settings;
-  state.adminThemes = data.themes || {};
-
-  const s = data.settings;
-
-  $("a_app_name").value =
-    s.app_name ?? "";
-
-  $("a_logo_url").value =
-    s.logo_url ?? "";
-
-  $("a_referral_reward").value =
-    s.referral_reward ?? 0;
-
-  $("a_minimum_withdraw").value =
-    s.minimum_withdraw ?? 0;
-
-  $("a_withdraw_fee").value =
-    s.withdraw_fee ?? 0;
-
-  $("a_telegram_channel").value =
-    s.telegram_channel ?? "";
-
-  $("a_announcement").value =
-    s.announcement ?? "";
-
-  $("a_allow_user_theme").value =
-    String(s.allow_user_theme);
-
-  $("a_maintenance").value =
-    String(s.maintenance);
-
-  const themeSelect =
-    $("a_global_theme");
-
-  themeSelect.innerHTML =
-    Object.entries(state.adminThemes)
-      .map(([key, theme]) => {
-        return `
-          <option value="${escapeHtml(key)}">
-            ${escapeHtml(theme.name)}
-          </option>
-        `;
-      })
-      .join("");
-
-  themeSelect.value =
-    s.global_theme || "gold";
-
-  buildThemeList(
-    state.adminThemes,
-    Boolean(s.allow_user_theme)
-  );
-
-  await loadAdminTasks();
-}
-
-async function saveAdminSettings() {
-  if (!state.isAdmin) return;
-
-  const payload = {
-    app_name:
-      $("a_app_name").value.trim(),
-
-    logo_url:
-      $("a_logo_url").value.trim(),
-
-    global_theme:
-      $("a_global_theme").value,
-
-    allow_user_theme:
-      $("a_allow_user_theme").value === "true",
-
-    referral_reward:
-      Number($("a_referral_reward").value || 0),
-
-    minimum_withdraw:
-      Number($("a_minimum_withdraw").value || 0),
-
-    withdraw_fee:
-      Number($("a_withdraw_fee").value || 0),
-
-    announcement:
-      $("a_announcement").value.trim(),
-
-    maintenance:
-      $("a_maintenance").value === "true",
-
-    telegram_channel:
-      $("a_telegram_channel").value.trim()
-  };
-
-  try {
-    await api("/api/admin/settings", {
-      method: "PUT",
-      body: JSON.stringify(payload)
-    });
-
-    state.config.allowUserTheme =
-      payload.allow_user_theme;
-
-    state.config.announcement =
-      payload.announcement;
-
-    state.config.appName =
-      payload.app_name;
-
-    state.config.logoUrl =
-      payload.logo_url;
-
-    state.config.telegramChannel =
-      payload.telegram_channel;
-
-    $("announcementText").textContent =
-      payload.announcement;
+    if (!c) return;
 
     document.title =
-      payload.app_name || "ST Earn";
+        c.appName || "ST Earn";
 
-    if (payload.logo_url) {
-      $("profileAvatar").innerHTML =
-        `<img src="${escapeHtml(payload.logo_url)}" alt="Logo">`;
+    const nameElements = [
+        "appName",
+        "brandName",
+        "logoName"
+    ];
+
+    nameElements.forEach(id => {
+
+        const el = $(id);
+
+        if (el) {
+            el.textContent =
+                c.appName || "ST Earn";
+        }
+    });
+
+    const logoElements = [
+        "appLogo",
+        "logo",
+        "brandLogo"
+    ];
+
+    logoElements.forEach(id => {
+
+        const el = $(id);
+
+        if (!el) return;
+
+        if (c.logoUrl) {
+
+            if (
+                el.tagName === "IMG"
+            ) {
+                el.src = c.logoUrl;
+            }
+        }
+    });
+
+    const announcement =
+        $("announcement");
+
+    if (
+        announcement &&
+        c.announcement
+    ) {
+        announcement.textContent =
+            c.announcement;
     }
 
-    const theme =
-      state.adminThemes[payload.global_theme];
+    if (c.maintenance) {
 
-    if (theme) {
-      applyTheme(theme);
+        showToast(
+            "Maintenance mode is active."
+        );
+    }
+}
+
+
+/* =========================================================
+   USER
+========================================================= */
+
+async function loadMe() {
+
+    try {
+
+        const data =
+            await api("/me");
+
+        state.user =
+            data.user || null;
+
+        state.isAdmin =
+            Boolean(data.isAdmin);
+
+        if (data.themeData) {
+            applyThemeData(
+                data.themeData
+            );
+        }
+
+        renderUser();
+
+        updateAdminVisibility();
+
+    } catch (e) {
+
+        console.error(e);
+
+        showToast(
+            e.message ||
+            "Unable to load account."
+        );
+    }
+}
+
+
+function renderUser() {
+
+    const u = state.user;
+
+    if (!u) return;
+
+    const balance =
+        money(u.balance);
+
+    const values = {
+        balance,
+        userBalance: balance,
+        totalBalance: balance,
+        totalEarned:
+            money(u.totalEarned),
+        tasksDone:
+            String(u.tasksDone || 0),
+        referrals:
+            String(u.referrals || 0),
+        username:
+            u.username
+                ? "@" + u.username
+                : "",
+        firstName:
+            u.firstName || "User"
+    };
+
+    Object.entries(values)
+        .forEach(([id, value]) => {
+
+            const el = $(id);
+
+            if (el) {
+                el.textContent = value;
+            }
+        });
+
+    const welcome =
+        $("welcomeName");
+
+    if (welcome) {
+        welcome.textContent =
+            u.firstName || "User";
     }
 
-    buildThemeList(
-      state.adminThemes,
-      payload.allow_user_theme
-    );
+    const avatar =
+        $("userAvatar");
 
-    showToast("Settings saved");
+    if (
+        avatar &&
+        state.telegramUser
+    ) {
 
-    await loadMe();
-  } catch (error) {
-    showToast(error.message);
-  }
+        const letter =
+            (
+                state.telegramUser.first_name ||
+                "U"
+            )
+                .charAt(0)
+                .toUpperCase();
+
+        avatar.textContent =
+            letter;
+    }
 }
 
-/* ============================
-   ADMIN TASKS
-============================ */
 
-async function loadAdminTasks() {
-  if (!state.isAdmin) return;
+/* =========================================================
+   THEME
+========================================================= */
 
-  try {
-    const data = await api(
-      "/api/admin/tasks"
-    );
+function applyThemeData(data) {
 
-    renderAdminTasks(data.tasks || []);
-  } catch (error) {
-    $("adminTaskList").innerHTML =
-      `<div class="empty-state">${escapeHtml(error.message)}</div>`;
-  }
-}
+    if (!data) return;
 
-function renderAdminTasks(tasks) {
-  const container =
-    $("adminTaskList");
+    const root =
+        document.documentElement;
 
-  if (!tasks.length) {
-    container.innerHTML =
-      `<div class="empty-state">No tasks created.</div>`;
-    return;
-  }
+    const vars = {
+        "--primary":
+            data.primary,
+        "--secondary":
+            data.secondary,
+        "--background":
+            data.background,
+        "--card":
+            data.card,
+        "--text":
+            data.text,
+        "--muted":
+            data.muted
+    };
 
-  container.innerHTML = tasks
-    .map((task) => {
-      return `
-        <div class="admin-item">
+    Object.entries(vars)
+        .forEach(([name, value]) => {
 
-          <div class="admin-item-top">
+            if (value) {
+                root.style.setProperty(
+                    name,
+                    value
+                );
+            }
+        });
 
-            <div>
-              <strong>
-                ${escapeHtml(task.title)}
-              </strong>
+    if (data.primary) {
 
-              <small>
-                ${escapeHtml(task.task_type)}
-                · +${money(task.reward)} USDT
-              </small>
-            </div>
-
-            <span class="status ${task.active ? "paid" : "rejected"}">
-              ${task.active ? "Active" : "Off"}
-            </span>
-
-          </div>
-
-          <div class="admin-actions">
-
-            <button
-              class="btn-danger"
-              data-delete-task="${task.id}"
-            >
-              Delete
-            </button>
-
-          </div>
-
-        </div>
-      `;
-    })
-    .join("");
-
-  container
-    .querySelectorAll("[data-delete-task]")
-    .forEach((button) => {
-      button.addEventListener("click", () => {
-        deleteAdminTask(
-          button.dataset.deleteTask
+        document.body.style.setProperty(
+            "--primary",
+            data.primary
         );
-      });
-    });
+    }
 }
 
-async function addAdminTask() {
-  const title =
-    $("a_t_title").value.trim();
 
-  const description =
-    $("a_t_desc").value.trim();
+async function changeTheme(theme) {
 
-  const url =
-    $("a_t_url").value.trim();
+    try {
 
-  const reward =
-    Number($("a_t_reward").value || 0);
-
-  const task_type =
-    $("a_t_type").value;
-
-  if (!title) {
-    showToast("Task title required");
-    return;
-  }
-
-  try {
-    await api("/api/admin/tasks", {
-      method: "POST",
-      body: JSON.stringify({
-        title,
-        description,
-        url,
-        reward,
-        task_type
-      })
-    });
-
-    $("a_t_title").value = "";
-    $("a_t_desc").value = "";
-    $("a_t_url").value = "";
-    $("a_t_reward").value = "";
-
-    showToast("Task added");
-
-    await loadAdminTasks();
-    await loadTasks();
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-async function deleteAdminTask(id) {
-  if (!confirm("Delete this task?")) return;
-
-  try {
-    await api(
-      `/api/admin/tasks/${id}`,
-      {
-        method: "DELETE"
-      }
-    );
-
-    showToast("Task deleted");
-
-    await loadAdminTasks();
-    await loadTasks();
-  } catch (error) {
-    showToast(error.message);
-  }
-}
-
-/* ============================
-   ADMIN USERS
-============================ */
-
-async function loadAdminUsers() {
-  if (!state.isAdmin) return;
-
-  try {
-    const data = await api(
-      "/api/admin/users"
-    );
-
-    renderAdminUsers(data.users || []);
-  } catch (error) {
-    $("adminUserList").innerHTML =
-      `<div class="empty-state">${escapeHtml(error.message)}</div>`;
-  }
-}
-
-function renderAdminUsers(users) {
-  const container =
-    $("adminUserList");
-
-  if (!users.length) {
-    container.innerHTML =
-      `<div class="empty-state">No users found.</div>`;
-    return;
-  }
-
-  container.innerHTML = users
-    .map((user) => {
-      const name =
-        user.first_name ||
-        user.username ||
-        "User";
-
-      return `
-        <div class="admin-item">
-
-          <div class="admin-item-top">
-
-            <div>
-              <strong>
-                ${escapeHtml(name)}
-              </strong>
-
-              <small>
-                ID: ${escapeHtml(user.telegram_id)}
-                <br>
-                Balance: ${money(user.balance)} USDT
-              </small>
-            </div>
-
-            <span class="status ${
-              user.blocked
-                ? "rejected"
-                : "paid"
-            }">
-              ${user.blocked ? "Blocked" : "Active"}
-            </span>
-
-          </div>
-
-          <div class="admin-actions">
-
-            <button
-              class="btn-success"
-              data-edit-user="${escapeHtml(user.telegram_id)}"
-              data-balance="${money(user.balance)}"
-            >
-              Balance
-            </button>
-
-            <button
-              class="${
-                user.blocked
-                  ? "btn-success"
-                  : "btn-danger"
-              }"
-              data-block-user="${escapeHtml(user.telegram_id)}"
-              data-blocked="${user.blocked}"
-            >
-              ${user.blocked ? "Unblock" : "Block"}
-            </button>
-
-          </div>
-
-        </div>
-      `;
-    })
-    .join("");
-
-  container
-    .querySelectorAll("[data-edit-user]")
-    .forEach((button) => {
-      button.addEventListener("click", () => {
-        editUserBalance(
-          button.dataset.editUser,
-          button.dataset.balance
+        await api(
+            "/theme",
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    theme
+                })
+            }
         );
-      });
-    });
 
-  container
-    .querySelectorAll("[data-block-user]")
-    .forEach((button) => {
-      button.addEventListener("click", () => {
-        toggleUserBlock(
-          button.dataset.blockUser,
-          button.dataset.blocked === "true"
+        await loadMe();
+
+        closeThemeSheet();
+
+        showToast(
+            "Theme updated."
         );
-      });
+
+    } catch (e) {
+
+        showToast(e.message);
+    }
+}
+
+
+function openThemeSheet() {
+
+    const sheet =
+        $("themeSheet");
+
+    const overlay =
+        $("themeOverlay");
+
+    if (sheet) {
+        sheet.classList.add("active");
+    }
+
+    if (overlay) {
+        overlay.classList.add("active");
+    }
+
+    renderThemes();
+}
+
+
+function closeThemeSheet() {
+
+    const sheet =
+        $("themeSheet");
+
+    const overlay =
+        $("themeOverlay");
+
+    if (sheet) {
+        sheet.classList.remove("active");
+    }
+
+    if (overlay) {
+        overlay.classList.remove("active");
+    }
+}
+
+
+function renderThemes() {
+
+    const container =
+        $("themeList");
+
+    if (!container) return;
+
+    const themes =
+        state.config?.themes || {};
+
+    container.innerHTML = "";
+
+    Object.entries(themes)
+        .forEach(([key, theme]) => {
+
+            const button =
+                document.createElement("button");
+
+            button.type = "button";
+
+            button.className =
+                "theme-option";
+
+            button.innerHTML = `
+                <span
+                    style="
+                    width:28px;
+                    height:28px;
+                    border-radius:50%;
+                    display:inline-block;
+                    background:${escapeHTML(theme.primary)};
+                    margin-right:10px;
+                    "
+                ></span>
+
+                <span>
+                    ${escapeHTML(theme.name || key)}
+                </span>
+            `;
+
+            button.addEventListener(
+                "click",
+                () => changeTheme(key)
+            );
+
+            container.appendChild(button);
+        });
+}
+
+
+/* =========================================================
+   PAGES
+========================================================= */
+
+function showPage(pageId) {
+
+    const pages =
+        qsa("[data-page-content]");
+
+    pages.forEach(page => {
+
+        page.style.display =
+            page.id === pageId
+                ? ""
+                : "none";
+    });
+
+    const explicit =
+        $(pageId);
+
+    if (explicit) {
+        explicit.style.display = "";
+    }
+
+    qsa("[data-page]")
+        .forEach(button => {
+
+            button.classList.toggle(
+                "active",
+                button.dataset.page ===
+                pageId
+            );
+        });
+
+    window.scrollTo({
+        top: 0,
+        behavior: "smooth"
     });
 }
 
-async function editUserBalance(
-  telegramId,
-  currentBalance
-) {
-  const value = prompt(
-    "Enter new balance:",
-    currentBalance
-  );
 
-  if (value === null) return;
+/* =========================================================
+   MENU SHEET
+========================================================= */
 
-  const balance = Number(value);
+function openMenuSheet() {
 
-  if (!Number.isFinite(balance) || balance < 0) {
-    showToast("Invalid balance");
-    return;
-  }
+    const sheet =
+        $("menuSheet") ||
+        $("sheet");
 
-  try {
-    await api(
-      `/api/admin/users/${encodeURIComponent(telegramId)}`,
-      {
-        method: "PUT",
-        body: JSON.stringify({
-          balance
-        })
-      }
-    );
+    const overlay =
+        $("sheetOverlay");
 
-    showToast("Balance updated");
+    if (sheet) {
+        sheet.classList.add("active");
+    }
 
-    await loadAdminUsers();
-  } catch (error) {
-    showToast(error.message);
-  }
+    if (overlay) {
+        overlay.classList.add("active");
+    }
 }
 
-async function toggleUserBlock(
-  telegramId,
-  currentlyBlocked
-) {
-  const action =
-    currentlyBlocked
-      ? "unblock"
-      : "block";
 
-  if (!confirm(`Are you sure you want to ${action} this user?`)) {
-    return;
-  }
+function closeMenuSheet() {
 
-  try {
-    await api(
-      `/api/admin/users/${encodeURIComponent(telegramId)}`,
-      {
-        method: "PUT",
-        body: JSON.stringify({
-          blocked: !currentlyBlocked
-        })
-      }
-    );
+    const sheet =
+        $("menuSheet") ||
+        $("sheet");
 
-    showToast(
-      currentlyBlocked
-        ? "User unblocked"
-        : "User blocked"
-    );
+    const overlay =
+        $("sheetOverlay");
 
-    await loadAdminUsers();
-  } catch (error) {
-    showToast(error.message);
-  }
+    if (sheet) {
+        sheet.classList.remove("active");
+    }
+
+    if (overlay) {
+        overlay.classList.remove("active");
+    }
 }
 
-/* ============================
-   ADMIN WITHDRAWALS
-============================ */
 
-async function loadAdminWithdrawals() {
-  if (!state.isAdmin) return;
+/* =========================================================
+   TASKS
+========================================================= */
 
-  try {
-    const data = await api(
-      "/api/admin/withdrawals"
-    );
+async function loadTasks() {
 
-    renderAdminWithdrawals(
-      data.withdrawals || []
-    );
-  } catch (error) {
-    $("adminWithdrawalList").innerHTML =
-      `<div class="empty-state">${escapeHtml(error.message)}</div>`;
-  }
+    try {
+
+        const data =
+            await api("/tasks");
+
+        state.tasks =
+            data.tasks || [];
+
+        renderTasks();
+
+    } catch (e) {
+
+        console.error(e);
+
+        showToast(
+            e.message ||
+            "Unable to load tasks."
+        );
+    }
 }
 
-function renderAdminWithdrawals(items) {
-  const container =
-    $("adminWithdrawalList");
 
-  if (!items.length) {
-    container.innerHTML =
-      `<div class="empty-state">No withdrawals found.</div>`;
-    return;
-  }
+function renderTasks() {
 
-  container.innerHTML = items
-    .map((item) => {
-      return `
-        <div class="admin-item">
+    const container =
+        $("taskList") ||
+        $("tasksList") ||
+        $("tasks");
 
-          <div class="admin-item-top">
+    if (!container) {
+        console.warn(
+            "Task container not found."
+        );
+        return;
+    }
 
-            <div>
-              <strong>
-                ${money(item.amount)} USDT
-              </strong>
+    container.innerHTML = "";
 
-              <small>
-                ${escapeHtml(item.first_name || item.username || "User")}
-                <br>
-                ${escapeHtml(item.network || "")}
-                <br>
-                ${escapeHtml(item.address || "")}
-              </small>
+    if (!state.tasks.length) {
+
+        container.innerHTML = `
+            <div class="empty-state">
+                No tasks available right now.
             </div>
+        `;
 
-            <span class="status ${escapeHtml(item.status)}">
-              ${escapeHtml(item.status)}
-            </span>
+        return;
+    }
 
-          </div>
+    state.tasks.forEach(task => {
 
-          ${
-            item.status === "pending"
-              ? `
-                <div class="admin-actions">
+        const card =
+            document.createElement("div");
 
-                  <button
-                    class="btn-success"
-                    data-pay-withdrawal="${item.id}"
-                  >
-                    Paid
-                  </button>
+        card.className =
+            "task-card";
 
-                  <button
-                    class="btn-danger"
-                    data-reject-withdrawal="${item.id}"
-                  >
-                    Reject
-                  </button>
+        card.innerHTML = `
+            <div class="task-card-content">
+
+                <div class="task-title">
+                    ${escapeHTML(task.title)}
+                </div>
+
+                <div class="task-description">
+                    ${escapeHTML(
+                        task.description || ""
+                    )}
+                </div>
+
+                <div class="task-bottom">
+
+                    <span class="task-reward">
+                        +${money(task.reward)} USDT
+                    </span>
+
+                    <button
+                        type="button"
+                        class="task-action"
+                        data-task-id="${task.id}"
+                    >
+                        ${
+                            task.completed
+                                ? "Completed"
+                                : "Start"
+                        }
+                    </button>
 
                 </div>
-              `
-              : ""
-          }
 
-        </div>
-      `;
-    })
-    .join("");
+            </div>
+        `;
 
-  container
-    .querySelectorAll("[data-pay-withdrawal]")
-    .forEach((button) => {
-      button.addEventListener("click", () => {
-        processWithdrawal(
-          button.dataset.payWithdrawal,
-          "paid"
-        );
-      });
-    });
+        const button =
+            card.querySelector(
+                ".task-action"
+            );
 
-  container
-    .querySelectorAll("[data-reject-withdrawal]")
-    .forEach((button) => {
-      button.addEventListener("click", () => {
-        processWithdrawal(
-          button.dataset.rejectWithdrawal,
-          "rejected"
-        );
-      });
+        if (button) {
+
+            if (task.completed) {
+
+                button.disabled = true;
+
+            } else {
+
+                button.addEventListener(
+                    "click",
+                    () => openTask(task.id)
+                );
+            }
+        }
+
+        container.appendChild(card);
     });
 }
 
-async function processWithdrawal(
-  id,
-  status
+
+function openTask(id) {
+
+    const task =
+        state.tasks.find(
+            x => Number(x.id) === Number(id)
+        );
+
+    if (!task) return;
+
+    state.selectedTask =
+        task;
+
+    const title =
+        $("taskModalTitle");
+
+    const description =
+        $("taskModalDescription");
+
+    const reward =
+        $("taskModalReward");
+
+    if (title) {
+        title.textContent =
+            task.title;
+    }
+
+    if (description) {
+        description.textContent =
+            task.description || "";
+    }
+
+    if (reward) {
+        reward.textContent =
+            "+" + money(task.reward) +
+            " USDT";
+    }
+
+    const modal =
+        $("taskModal");
+
+    const overlay =
+        $("taskModalOverlay");
+
+    if (modal) {
+        modal.classList.add("active");
+    }
+
+    if (overlay) {
+        overlay.classList.add("active");
+    }
+}
+
+
+function closeTaskModal() {
+
+    const modal =
+        $("taskModal");
+
+    const overlay =
+        $("taskModalOverlay");
+
+    if (modal) {
+        modal.classList.remove("active");
+    }
+
+    if (overlay) {
+        overlay.classList.remove("active");
+    }
+
+    state.selectedTask = null;
+}
+
+
+function openSelectedTask() {
+
+    const task =
+        state.selectedTask;
+
+    if (!task) return;
+
+    if (task.url) {
+
+        try {
+
+            const tg =
+                telegram();
+
+            if (
+                tg &&
+                tg.openLink
+            ) {
+
+                tg.openLink(task.url);
+
+            } else {
+
+                window.open(
+                    task.url,
+                    "_blank"
+                );
+            }
+
+        } catch {
+            window.open(
+                task.url,
+                "_blank"
+            );
+        }
+    }
+}
+
+
+async function completeSelectedTask() {
+
+    const task =
+        state.selectedTask;
+
+    if (!task) return;
+
+    try {
+
+        const data =
+            await api(
+                `/tasks/${task.id}/complete`,
+                {
+                    method: "POST"
+                }
+            );
+
+        showToast(
+            `Task completed! +${money(
+                data.reward
+            )} USDT`
+        );
+
+        closeTaskModal();
+
+        await Promise.all([
+            loadMe(),
+            loadTasks()
+        ]);
+
+    } catch (e) {
+
+        showToast(e.message);
+    }
+}
+
+
+/* =========================================================
+   REFERRALS
+========================================================= */
+
+async function loadReferrals() {
+
+    try {
+
+        const data =
+            await api("/referrals");
+
+        state.referrals =
+            data.referrals || [];
+
+        const count =
+            $("referralCount");
+
+        if (count) {
+            count.textContent =
+                state.referrals.length;
+        }
+
+        const reward =
+            $("referralReward");
+
+        if (reward) {
+            reward.textContent =
+                money(data.referralReward);
+        }
+
+        const input =
+            $("referralLink");
+
+        if (
+            input &&
+            data.referralLink
+        ) {
+            input.value =
+                data.referralLink;
+        }
+
+    } catch (e) {
+
+        console.error(e);
+    }
+}
+
+
+async function inviteFriends() {
+
+    try {
+
+        const data =
+            await api("/referrals");
+
+        const link =
+            data.referralLink;
+
+        if (!link) {
+
+            showToast(
+                "Referral link unavailable."
+            );
+
+            return;
+        }
+
+        const tg =
+            telegram();
+
+        const text =
+            "Join ST Earn and earn rewards!";
+
+        if (
+            tg &&
+            tg.openTelegramLink
+        ) {
+
+            const share =
+                `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
+
+            tg.openTelegramLink(
+                share
+            );
+
+        } else if (
+            navigator.share
+        ) {
+
+            await navigator.share({
+                title: "ST Earn",
+                text,
+                url: link
+            });
+
+        } else {
+
+            await navigator.clipboard.writeText(
+                link
+            );
+
+            showToast(
+                "Referral link copied."
+            );
+        }
+
+    } catch (e) {
+
+        console.error(e);
+
+        showToast(
+            "Unable to share referral link."
+        );
+    }
+}
+
+
+/* =========================================================
+   WITHDRAW
+========================================================= */
+
+async function submitWithdrawal() {
+
+    const amountInput =
+        $("withdrawAmount");
+
+    const networkInput =
+        $("withdrawNetwork");
+
+    const addressInput =
+        $("withdrawAddress");
+
+    if (!amountInput) {
+
+        showToast(
+            "Withdrawal form not found."
+        );
+
+        return;
+    }
+
+    const amount =
+        Number(amountInput.value || 0);
+
+    const network =
+        networkInput
+            ? networkInput.value.trim()
+            : "";
+
+    const address =
+        addressInput
+            ? addressInput.value.trim()
+            : "";
+
+    try {
+
+        const data =
+            await api(
+                "/withdrawals",
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        amount,
+                        network,
+                        address
+                    })
+                }
+            );
+
+        showToast(
+            "Withdrawal submitted."
+        );
+
+        amountInput.value = "";
+
+        if (networkInput) {
+            networkInput.value = "";
+        }
+
+        if (addressInput) {
+            addressInput.value = "";
+        }
+
+        await Promise.all([
+            loadMe(),
+            loadWithdrawals()
+        ]);
+
+    } catch (e) {
+
+        showToast(e.message);
+    }
+}
+
+
+async function loadWithdrawals() {
+
+    try {
+
+        const data =
+            await api(
+                "/withdrawals"
+            );
+
+        state.withdrawals =
+            data.withdrawals || [];
+
+        renderWithdrawals();
+
+    } catch (e) {
+
+        console.error(e);
+    }
+}
+
+
+function renderWithdrawals() {
+
+    const container =
+        $("withdrawalList") ||
+        $("withdrawalsList");
+
+    if (!container) return;
+
+    container.innerHTML = "";
+
+    if (!state.withdrawals.length) {
+
+        container.innerHTML = `
+            <div class="empty-state">
+                No withdrawal history.
+            </div>
+        `;
+
+        return;
+    }
+
+    state.withdrawals.forEach(item => {
+
+        const row =
+            document.createElement("div");
+
+        row.className =
+            "withdrawal-row";
+
+        row.innerHTML = `
+            <div>
+                <strong>
+                    ${money(item.amount)} USDT
+                </strong>
+
+                <small>
+                    ${escapeHTML(
+                        item.network || ""
+                    )}
+                </small>
+            </div>
+
+            <span>
+                ${escapeHTML(
+                    item.status || "pending"
+                )}
+            </span>
+        `;
+
+        container.appendChild(row);
+    });
+}
+
+
+/* =========================================================
+   ADMIN
+========================================================= */
+
+function updateAdminVisibility() {
+
+    qsa(
+        "[data-admin-only]"
+    ).forEach(el => {
+
+        el.style.display =
+            state.isAdmin
+                ? ""
+                : "none";
+    });
+
+    const adminButton =
+        $("adminSheetBtn");
+
+    if (adminButton) {
+
+        adminButton.style.display =
+            state.isAdmin
+                ? ""
+                : "none";
+    }
+}
+
+
+async function loadAdminSettings() {
+
+    if (!state.isAdmin) return;
+
+    try {
+
+        const data =
+            await api(
+                "/admin/settings"
+            );
+
+        state.settings =
+            data.settings;
+
+        renderAdminSettings(
+            data.settings
+        );
+
+    } catch (e) {
+
+        showToast(e.message);
+    }
+}
+
+
+function renderAdminSettings(s) {
+
+    const map = {
+        adminAppName:
+            s.app_name,
+        adminLogoUrl:
+            s.logo_url,
+        adminGlobalTheme:
+            s.global_theme,
+        adminReferralReward:
+            s.referral_reward,
+        adminMinimumWithdraw:
+            s.minimum_withdraw,
+        adminWithdrawFee:
+            s.withdraw_fee,
+        adminAnnouncement:
+            s.announcement,
+        adminTelegramChannel:
+            s.telegram_channel
+    };
+
+    Object.entries(map)
+        .forEach(([id, value]) => {
+
+            const el = $(id);
+
+            if (el) {
+                el.value =
+                    value ?? "";
+            }
+        });
+
+    const userTheme =
+        $("adminAllowUserTheme");
+
+    if (userTheme) {
+        userTheme.checked =
+            Boolean(
+                s.allow_user_theme
+            );
+    }
+
+    const maintenance =
+        $("adminMaintenance");
+
+    if (maintenance) {
+        maintenance.checked =
+            Boolean(
+                s.maintenance
+            );
+    }
+}
+
+
+async function saveAdminSettings() {
+
+    if (!state.isAdmin) return;
+
+    const data = {};
+
+    const fields = {
+        app_name:
+            "adminAppName",
+        logo_url:
+            "adminLogoUrl",
+        global_theme:
+            "adminGlobalTheme",
+        referral_reward:
+            "adminReferralReward",
+        minimum_withdraw:
+            "adminMinimumWithdraw",
+        withdraw_fee:
+            "adminWithdrawFee",
+        announcement:
+            "adminAnnouncement",
+        telegram_channel:
+            "adminTelegramChannel"
+    };
+
+    Object.entries(fields)
+        .forEach(([key, id]) => {
+
+            const el = $(id);
+
+            if (el) {
+                data[key] =
+                    el.value;
+            }
+        });
+
+    const userTheme =
+        $("adminAllowUserTheme");
+
+    if (userTheme) {
+        data.allow_user_theme =
+            userTheme.checked;
+    }
+
+    const maintenance =
+        $("adminMaintenance");
+
+    if (maintenance) {
+        data.maintenance =
+            maintenance.checked;
+    }
+
+    try {
+
+        await api(
+            "/admin/settings",
+            {
+                method: "PUT",
+                body: JSON.stringify(data)
+            }
+        );
+
+        showToast(
+            "Settings saved successfully."
+        );
+
+        await loadConfig();
+
+    } catch (e) {
+
+        showToast(e.message);
+    }
+}
+
+
+/* =========================================================
+   ADMIN TASKS
+========================================================= */
+
+async function loadAdminTasks() {
+
+    if (!state.isAdmin) return;
+
+    try {
+
+        const data =
+            await api(
+                "/admin/tasks"
+            );
+
+        renderAdminTasks(
+            data.tasks || []
+        );
+
+    } catch (e) {
+
+        showToast(e.message);
+    }
+}
+
+
+function renderAdminTasks(tasks) {
+
+    const container =
+        $("adminTaskList") ||
+        $("adminTasks");
+
+    if (!container) return;
+
+    container.innerHTML = "";
+
+    tasks.forEach(task => {
+
+        const row =
+            document.createElement("div");
+
+        row.className =
+            "admin-task-row";
+
+        row.innerHTML = `
+            <div>
+                <strong>
+                    ${escapeHTML(task.title)}
+                </strong>
+
+                <small>
+                    ${money(task.reward)} USDT
+                </small>
+            </div>
+
+            <div>
+                <button
+                    type="button"
+                    data-delete-task="${task.id}"
+                >
+                    Delete
+                </button>
+            </div>
+        `;
+
+        const deleteButton =
+            row.querySelector(
+                "[data-delete-task]"
+            );
+
+        if (deleteButton) {
+
+            deleteButton.addEventListener(
+                "click",
+                () =>
+                    deleteAdminTask(
+                        task.id
+                    )
+            );
+        }
+
+        container.appendChild(row);
+    });
+}
+
+
+async function addAdminTask() {
+
+    const title =
+        $("adminTaskTitle");
+
+    const description =
+        $("adminTaskDescription");
+
+    const url =
+        $("adminTaskUrl");
+
+    const reward =
+        $("adminTaskReward");
+
+    const type =
+        $("adminTaskType");
+
+    if (!title) {
+
+        showToast(
+            "Task form not found."
+        );
+
+        return;
+    }
+
+    try {
+
+        await api(
+            "/admin/tasks",
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    title:
+                        title.value.trim(),
+
+                    description:
+                        description
+                            ? description.value.trim()
+                            : "",
+
+                    url:
+                        url
+                            ? url.value.trim()
+                            : "",
+
+                    reward:
+                        reward
+                            ? Number(
+                                reward.value
+                            )
+                            : 0,
+
+                    task_type:
+                        type
+                            ? type.value
+                            : "custom"
+                })
+            }
+        );
+
+        showToast(
+            "Task added."
+        );
+
+        title.value = "";
+
+        if (description) {
+            description.value = "";
+        }
+
+        if (url) {
+            url.value = "";
+        }
+
+        if (reward) {
+            reward.value = "";
+        }
+
+        await Promise.all([
+            loadAdminTasks(),
+            loadTasks()
+        ]);
+
+    } catch (e) {
+
+        showToast(e.message);
+    }
+}
+
+
+async function deleteAdminTask(id) {
+
+    if (
+        !confirm(
+            "Delete this task?"
+        )
+    ) {
+        return;
+    }
+
+    try {
+
+        await api(
+            `/admin/tasks/${id}`,
+            {
+                method: "DELETE"
+            }
+        );
+
+        showToast(
+            "Task deleted."
+        );
+
+        await Promise.all([
+            loadAdminTasks(),
+            loadTasks()
+        ]);
+
+    } catch (e) {
+
+        showToast(e.message);
+    }
+}
+
+
+/* =========================================================
+   ADMIN USERS
+========================================================= */
+
+async function loadAdminUsers() {
+
+    if (!state.isAdmin) return;
+
+    try {
+
+        const data =
+            await api(
+                "/admin/users"
+            );
+
+        renderAdminUsers(
+            data.users || []
+        );
+
+    } catch (e) {
+
+        showToast(e.message);
+    }
+}
+
+
+function renderAdminUsers(users) {
+
+    const container =
+        $("adminUserList") ||
+        $("adminUsers");
+
+    if (!container) return;
+
+    container.innerHTML = "";
+
+    users.forEach(user => {
+
+        const row =
+            document.createElement("div");
+
+        row.className =
+            "admin-user-row";
+
+        row.innerHTML = `
+            <div>
+                <strong>
+                    ${escapeHTML(
+                        user.first_name ||
+                        user.username ||
+                        user.telegram_id
+                    )}
+                </strong>
+
+                <small>
+                    ID: ${escapeHTML(
+                        user.telegram_id
+                    )}
+                </small>
+            </div>
+
+            <div>
+                <strong>
+                    ${money(user.balance)}
+                </strong>
+            </div>
+        `;
+
+        container.appendChild(row);
+    });
+}
+
+
+/* =========================================================
+   ADMIN WITHDRAWALS
+========================================================= */
+
+async function loadAdminWithdrawals() {
+
+    if (!state.isAdmin) return;
+
+    try {
+
+        const data =
+            await api(
+                "/admin/withdrawals"
+            );
+
+        renderAdminWithdrawals(
+            data.withdrawals || []
+        );
+
+    } catch (e) {
+
+        showToast(e.message);
+    }
+}
+
+
+function renderAdminWithdrawals(items) {
+
+    const container =
+        $("adminWithdrawalList") ||
+        $("adminWithdrawals");
+
+    if (!container) return;
+
+    container.innerHTML = "";
+
+    items.forEach(item => {
+
+        const row =
+            document.createElement("div");
+
+        row.className =
+            "admin-withdrawal-row";
+
+        row.innerHTML = `
+            <div>
+                <strong>
+                    ${money(item.amount)} USDT
+                </strong>
+
+                <small>
+                    ${escapeHTML(
+                        item.network || ""
+                    )}
+                    -
+                    ${escapeHTML(
+                        item.address || ""
+                    )}
+                </small>
+            </div>
+
+            <div>
+                <span>
+                    ${escapeHTML(
+                        item.status
+                    )}
+                </span>
+
+                ${
+                    item.status === "pending"
+                        ? `
+                        <button
+                            type="button"
+                            data-pay="${item.id}"
+                        >
+                            Paid
+                        </button>
+
+                        <button
+                            type="button"
+                            data-reject="${item.id}"
+                        >
+                            Reject
+                        </button>
+                        `
+                        : ""
+                }
+            </div>
+        `;
+
+        const pay =
+            row.querySelector(
+                "[data-pay]"
+            );
+
+        const reject =
+            row.querySelector(
+                "[data-reject]"
+            );
+
+        if (pay) {
+
+            pay.addEventListener(
+                "click",
+                () =>
+                    updateWithdrawal(
+                        item.id,
+                        "paid"
+                    )
+            );
+        }
+
+        if (reject) {
+
+            reject.addEventListener(
+                "click",
+                () =>
+                    updateWithdrawal(
+                        item.id,
+                        "rejected"
+                    )
+            );
+        }
+
+        container.appendChild(row);
+    });
+}
+
+
+async function updateWithdrawal(
+    id,
+    status
 ) {
-  const action =
-    status === "paid"
-      ? "mark this withdrawal as PAID"
-      : "REJECT this withdrawal";
 
-  if (!confirm(`Are you sure you want to ${action}?`)) {
-    return;
-  }
+    try {
 
-  try {
-    await api(
-      `/api/admin/withdrawals/${id}`,
-      {
-        method: "PUT",
-        body: JSON.stringify({
-          status
-        })
-      }
-    );
+        await api(
+            `/admin/withdrawals/${id}`,
+            {
+                method: "PUT",
+                body: JSON.stringify({
+                    status
+                })
+            }
+        );
 
-    showToast(
-      status === "paid"
-        ? "Withdrawal marked paid"
-        : "Withdrawal rejected"
-    );
+        showToast(
+            "Withdrawal updated."
+        );
 
-    await loadAdminWithdrawals();
-  } catch (error) {
-    showToast(error.message);
-  }
+        await Promise.all([
+            loadAdminWithdrawals(),
+            loadMe()
+        ]);
+
+    } catch (e) {
+
+        showToast(e.message);
+    }
 }
 
-/* ============================
-   ADMIN TABS
-============================ */
 
-function setupAdminTabs() {
-  document
-    .querySelectorAll("[data-admin-tab]")
-    .forEach((button) => {
-      button.addEventListener("click", async () => {
+/* =========================================================
+   REFRESH
+========================================================= */
 
-        document
-          .querySelectorAll(".admin-tab")
-          .forEach((tab) => {
-            tab.classList.remove("active");
-          });
+async function refreshAll() {
 
-        button.classList.add("active");
+    await Promise.all([
+        loadConfig(),
+        loadMe(),
+        loadTasks(),
+        loadWithdrawals(),
+        loadReferrals()
+    ]);
 
-        document
-          .querySelectorAll(".admin-panel")
-          .forEach((panel) => {
-            panel.style.display = "none";
-          });
+    if (state.isAdmin) {
 
-        const target =
-          $(button.dataset.adminTab);
-
-        if (target) {
-          target.style.display = "block";
-        }
-
-        const tab =
-          button.dataset.adminTab;
-
-        if (tab === "adminSettings") {
-          await loadAdminSettings();
-        }
-
-        if (tab === "adminTasks") {
-          await loadAdminTasks();
-        }
-
-        if (tab === "adminUsers") {
-          await loadAdminUsers();
-        }
-
-        if (tab === "adminWithdrawals") {
-          await loadAdminWithdrawals();
-        }
-      });
-    });
+        await Promise.all([
+            loadAdminSettings(),
+            loadAdminTasks(),
+            loadAdminUsers(),
+            loadAdminWithdrawals()
+        ]);
+    }
 }
 
-/* ============================
-   EVENTS
-============================ */
+
+/* =========================================================
+   EVENT SETUP
+========================================================= */
 
 function setupEvents() {
 
-  document
-    .querySelectorAll("[data-page]")
-    .forEach((button) => {
-      button.addEventListener("click", () => {
-        const page =
-          button.dataset.page;
+    /*
+       IMPORTANT:
+       Every event uses `on()`.
+       Missing HTML elements are ignored safely.
+       Therefore:
+       Cannot read properties of null
+       (reading 'addEventListener')
+       will not crash the application.
+    */
 
-        if (
-          page === "adminPage" &&
-          !state.isAdmin
-        ) {
-          showToast("Admin access required");
-          return;
+
+    qsa("[data-page]")
+        .forEach(button => {
+
+            button.addEventListener(
+                "click",
+                () => {
+
+                    const page =
+                        button.dataset.page;
+
+                    if (
+                        page === "adminPage" &&
+                        !state.isAdmin
+                    ) {
+
+                        showToast(
+                            "Admin access required."
+                        );
+
+                        return;
+                    }
+
+                    showPage(page);
+                }
+            );
+        });
+
+
+    on(
+        "menuButton",
+        "click",
+        openMenuSheet
+    );
+
+
+    on(
+        "menuBtn",
+        "click",
+        openMenuSheet
+    );
+
+
+    on(
+        "sheetOverlay",
+        "click",
+        closeMenuSheet
+    );
+
+
+    on(
+        "closeSheet",
+        "click",
+        closeMenuSheet
+    );
+
+
+    on(
+        "sheetClose",
+        "click",
+        closeMenuSheet
+    );
+
+
+    on(
+        "sheetCloseBottom",
+        "click",
+        closeMenuSheet
+    );
+
+
+    on(
+        "themeSheetBtn",
+        "click",
+        openThemeSheet
+    );
+
+
+    on(
+        "themeButton",
+        "click",
+        openThemeSheet
+    );
+
+
+    on(
+        "themeOverlay",
+        "click",
+        closeThemeSheet
+    );
+
+
+    on(
+        "closeThemeSheet",
+        "click",
+        closeThemeSheet
+    );
+
+
+    on(
+        "refreshButton",
+        "click",
+        refreshAll
+    );
+
+
+    on(
+        "sheetRefresh",
+        "click",
+        async () => {
+
+            closeMenuSheet();
+
+            await refreshAll();
         }
+    );
 
-        showPage(page);
-      });
+
+    on(
+        "sheetHistory",
+        "click",
+        () => {
+
+            closeMenuSheet();
+
+            showPage(
+                "walletPage"
+            );
+        }
+    );
+
+
+    on(
+        "sheetInvite",
+        "click",
+        () => {
+
+            closeMenuSheet();
+
+            inviteFriends();
+        }
+    );
+
+
+    on(
+        "inviteButton",
+        "click",
+        inviteFriends
+    );
+
+
+    on(
+        "adminSheetBtn",
+        "click",
+        () => {
+
+            closeMenuSheet();
+
+            if (state.isAdmin) {
+
+                showPage(
+                    "adminPage"
+                );
+
+                loadAdminSettings();
+                loadAdminTasks();
+                loadAdminUsers();
+                loadAdminWithdrawals();
+            }
+        }
+    );
+
+
+    on(
+        "withdrawButton",
+        "click",
+        submitWithdrawal
+    );
+
+
+    on(
+        "taskOpenButton",
+        "click",
+        openSelectedTask
+    );
+
+
+    on(
+        "taskCompleteButton",
+        "click",
+        completeSelectedTask
+    );
+
+
+    on(
+        "closeTaskModal",
+        "click",
+        closeTaskModal
+    );
+
+
+    on(
+        "taskModalOverlay",
+        "click",
+        closeTaskModal
+    );
+
+
+    on(
+        "saveAdminSettings",
+        "click",
+        saveAdminSettings
+    );
+
+
+    on(
+        "addAdminTask",
+        "click",
+        addAdminTask
+    );
+
+
+    on(
+        "refreshAdminUsers",
+        "click",
+        loadAdminUsers
+    );
+
+
+    on(
+        "refreshAdminWithdrawals",
+        "click",
+        loadAdminWithdrawals
+    );
+
+
+    qsa(
+        "[data-theme]"
+    ).forEach(button => {
+
+        button.addEventListener(
+            "click",
+            () => {
+
+                const theme =
+                    button.dataset.theme;
+
+                if (theme) {
+                    changeTheme(theme);
+                }
+            }
+        );
     });
 
 
-  $("menuButton")
-    .addEventListener(
-      "click",
-      openMenuSheet
-    );
+    qsa(
+        "[data-action]"
+    ).forEach(button => {
 
+        const action =
+            button.dataset.action;
 
-  $("sheetOverlay")
-    .addEventListener(
-      "click",
-      closeMenuSheet
-    );
+        if (!action) return;
 
+        button.addEventListener(
+            "click",
+            () => {
 
-  $("closeSheet")
-    .addEventListener(
-      "click",
-      closeMenuSheet
-    );
+                if (
+                    action ===
+                    "refresh"
+                ) {
+                    refreshAll();
+                }
 
+                if (
+                    action ===
+                    "invite"
+                ) {
+                    inviteFriends();
+                }
 
-  $("sheetCloseBottom")
-    .addEventListener(
-      "click",
-      closeMenuSheet
-    );
+                if (
+                    action ===
+                    "withdraw"
+                ) {
+                    showPage(
+                        "withdrawPage"
+                    );
+                }
 
-
-  $("themeSheetBtn")
-    .addEventListener(
-      "click",
-      openThemeSheet
-    );
-
-
-  $("themeOverlay")
-    .addEventListener(
-      "click",
-      closeThemeSheet
-    );
-
-
-  $("closeThemeSheet")
-    .addEventListener(
-      "click",
-      closeThemeSheet
-    );
-
-
-  $("sheetRefresh")
-    .addEventListener(
-      "click",
-      async () => {
-        closeMenuSheet();
-
-        try {
-          await refreshAll();
-        } catch {}
-      }
-    );
-
-
-  $("refreshButton")
-    .addEventListener(
-      "click",
-      async () => {
-        try {
-          await refreshAll();
-        } catch {}
-      }
-    );
-
-
-  $("sheetHistory")
-    .addEventListener(
-      "click",
-      () => {
-        closeMenuSheet();
-        showPage("walletPage");
-      }
-    );
-
-
-  $("sheetInvite")
-    .addEventListener(
-      "click",
-      () => {
-        closeMenuSheet();
-        inviteFriends();
-      }
-    );
-
-
-  $("inviteButton")
-    .addEventListener(
-      "click",
-      inviteFriends
-    );
-
-
-  $("adminSheetBtn")
-    .addEventListener(
-      "click",
-      () => {
-        closeMenuSheet();
-
-        if (state.isAdmin) {
-          showPage("adminPage");
-        }
-      }
-    );
-
-
-  $("withdrawButton")
-    .addEventListener(
-      "click",
-      submitWithdrawal
-    );
-
-
-  $("taskOpenButton")
-    .addEventListener(
-      "click",
-      openSelectedTask
-    );
-
-
-  $("taskCompleteButton")
-    .addEventListener(
-      "click",
-      completeSelectedTask
-    );
-
-
-  $("closeTaskModal")
-    .addEventListener(
-      "click",
-      closeTaskModal
-    );
-
-
-  $("taskModalOverlay")
-    .addEventListener(
-      "click",
-      closeTaskModal
-    );
-
-
-  $("saveAdminSettings")
-    .addEventListener(
-      "click",
-      saveAdminSettings
-    );
-
-
-  $("addAdminTask")
-    .addEventListener(
-      "click",
-      addAdminTask
-    );
-
-
-  $("refreshAdminUsers")
-    .addEventListener(
-      "click",
-      loadAdminUsers
-    );
-
-
-  $("refreshAdminWithdrawals")
-    .addEventListener(
-      "click",
-      loadAdminWithdrawals
-    );
-
-
-  setupAdminTabs();
+                if (
+                    action ===
+                    "tasks"
+                ) {
+                    showPage(
+                        "tasksPage"
+                    );
+                }
+            }
+        );
+    });
 }
 
-/* ============================
+
+/* =========================================================
+   SAFE ERROR HANDLER
+========================================================= */
+
+window.addEventListener(
+    "error",
+    event => {
+
+        console.error(
+            "ST Earn frontend error:",
+            event.error || event.message
+        );
+    }
+);
+
+
+window.addEventListener(
+    "unhandledrejection",
+    event => {
+
+        console.error(
+            "ST Earn promise error:",
+            event.reason
+        );
+    }
+);
+
+
+/* =========================================================
    START
-============================ */
+========================================================= */
 
 async function startApp() {
-  try {
 
-    if (!tg?.initData) {
-      throw new Error(
-        "Please open ST Earn from Telegram."
-      );
+    try {
+
+        initTelegram();
+
+        setupEvents();
+
+        await loadConfig();
+
+        await loadMe();
+
+        await Promise.all([
+            loadTasks(),
+            loadWithdrawals(),
+            loadReferrals()
+        ]);
+
+        if (state.isAdmin) {
+
+            await Promise.all([
+                loadAdminSettings(),
+                loadAdminTasks(),
+                loadAdminUsers(),
+                loadAdminWithdrawals()
+            ]);
+        }
+
+        /*
+          Default page.
+        */
+
+        const firstPage =
+            state.isAdmin
+                ? "homePage"
+                : "homePage";
+
+        if ($(firstPage)) {
+            showPage(firstPage);
+        }
+
+        console.log(
+            "ST Earn Mini App initialized successfully."
+        );
+
+    } catch (e) {
+
+        console.error(
+            "ST Earn initialization error:",
+            e
+        );
+
+        showToast(
+            e.message ||
+            "Unable to start ST Earn."
+        );
     }
-
-    await loadConfig();
-
-    await loadMe();
-
-    telegramSetup();
-
-    setupEvents();
-
-    await loadTasks();
-
-    await loadWithdrawals();
-
-    await loadReferrals();
-
-    if (state.isAdmin) {
-      await loadAdminSettings();
-    }
-
-    $("loadingScreen").style.display =
-      "none";
-
-    $("app").style.display =
-      "block";
-
-    showPage("homePage");
-
-  } catch (error) {
-
-    console.error(error);
-
-    $("loadingScreen").innerHTML = `
-      <div class="loading-logo">!</div>
-
-      <div class="loading-title">
-        ST Earn
-      </div>
-
-      <p style="max-width:280px;text-align:center;">
-        ${escapeHtml(error.message)}
-      </p>
-    `;
-  }
 }
 
-document.addEventListener(
-  "DOMContentLoaded",
-  startApp
-);
+
+if (
+    document.readyState ===
+    "loading"
+) {
+
+    document.addEventListener(
+        "DOMContentLoaded",
+        startApp
+    );
+
+} else {
+
+    startApp();
+}
