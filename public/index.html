@@ -1,1 +1,1560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
 
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+  >
+
+  <title>ST Earn</title>
+
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <link
+    rel="stylesheet"
+    href="/assets/style.css"
+  >
+</head>
+
+<body>
+
+  <!-- =====================================
+       APP LOADING
+  ====================================== -->
+
+  <div id="loadingScreen" class="loading-screen">
+
+    <div class="loading-logo">
+      ST
+    </div>
+
+    <div class="loading-title">
+      ST Earn
+    </div>
+
+    <div class="loading-spinner"></div>
+
+    <p>
+      Loading your account...
+    </p>
+
+  </div>
+
+
+  <!-- =====================================
+       MAIN APP
+  ====================================== -->
+
+  <main id="app" class="app" style="display:none;">
+
+
+    <!-- ===================================
+         TOP HEADER
+    ==================================== -->
+
+    <header class="top-header">
+
+      <div class="profile-area">
+
+        <div
+          id="profileAvatar"
+          class="profile-avatar"
+        >
+          U
+        </div>
+
+        <div class="profile-info">
+
+          <span class="hello-text">
+            Welcome back
+          </span>
+
+          <strong id="profileName">
+            User
+          </strong>
+
+        </div>
+
+      </div>
+
+
+      <!-- 3 DOT BUTTON -->
+
+      <button
+        id="menuButton"
+        class="icon-button menu-button"
+        aria-label="Menu"
+      >
+        ⋮
+      </button>
+
+    </header>
+
+
+
+    <!-- ===================================
+         ANNOUNCEMENT
+    ==================================== -->
+
+    <div
+      id="announcement"
+      class="announcement"
+    >
+
+      <span class="announcement-icon">
+        📢
+      </span>
+
+      <span id="announcementText">
+        Welcome to ST Earn!
+      </span>
+
+    </div>
+
+
+
+    <!-- ===================================
+         HOME PAGE
+    ==================================== -->
+
+    <section
+      id="homePage"
+      class="page active"
+    >
+
+      <!-- BALANCE CARD -->
+
+      <div class="balance-card">
+
+        <div class="balance-top">
+
+          <div>
+
+            <span class="balance-label">
+              Available Balance
+            </span>
+
+            <div class="balance-value">
+              <span id="balance">
+                0.00
+              </span>
+
+              <small>
+                USDT
+              </small>
+            </div>
+
+          </div>
+
+          <div class="coin-icon">
+            $
+          </div>
+
+        </div>
+
+
+        <div class="balance-bottom">
+
+          <div class="balance-stat">
+
+            <span>
+              Total Earned
+            </span>
+
+            <strong id="totalEarned">
+              0.00 USDT
+            </strong>
+
+          </div>
+
+          <div class="balance-stat right">
+
+            <span>
+              Tasks Done
+            </span>
+
+            <strong id="tasksDone">
+              0
+            </strong>
+
+          </div>
+
+        </div>
+
+      </div>
+
+
+
+      <!-- QUICK ACTIONS -->
+
+      <div class="section-title-row">
+
+        <h2>
+          Quick Actions
+        </h2>
+
+      </div>
+
+
+      <div class="quick-grid">
+
+        <button
+          class="quick-card"
+          data-page="tasksPage"
+        >
+
+          <div class="quick-icon">
+            ✓
+          </div>
+
+          <strong>
+            Tasks
+          </strong>
+
+          <small>
+            Earn money
+          </small>
+
+        </button>
+
+
+        <button
+          class="quick-card"
+          data-page="walletPage"
+        >
+
+          <div class="quick-icon">
+            $
+          </div>
+
+          <strong>
+            Withdraw
+          </strong>
+
+          <small>
+            Cash out
+          </small>
+
+        </button>
+
+
+        <button
+          class="quick-card"
+          data-page="referralsPage"
+        >
+
+          <div class="quick-icon">
+            ♧
+          </div>
+
+          <strong>
+            Referrals
+          </strong>
+
+          <small>
+            Invite friends
+          </small>
+
+        </button>
+
+
+        <button
+          class="quick-card"
+          id="refreshButton"
+        >
+
+          <div class="quick-icon">
+            ↻
+          </div>
+
+          <strong>
+            Refresh
+          </strong>
+
+          <small>
+            Update balance
+          </small>
+
+        </button>
+
+      </div>
+
+
+
+      <!-- STATISTICS -->
+
+      <div class="section-title-row">
+
+        <h2>
+          Your Statistics
+        </h2>
+
+      </div>
+
+
+      <div class="stats-grid">
+
+        <div class="stat-card">
+
+          <span class="stat-icon">
+            $
+          </span>
+
+          <div>
+
+            <small>
+              Total Earned
+            </small>
+
+            <strong id="statEarned">
+              0.00
+            </strong>
+
+          </div>
+
+        </div>
+
+
+        <div class="stat-card">
+
+          <span class="stat-icon">
+            ✓
+          </span>
+
+          <div>
+
+            <small>
+              Tasks Completed
+            </small>
+
+            <strong id="statTasks">
+              0
+            </strong>
+
+          </div>
+
+        </div>
+
+
+        <div class="stat-card">
+
+          <span class="stat-icon">
+            ♧
+          </span>
+
+          <div>
+
+            <small>
+              Referrals
+            </small>
+
+            <strong id="statReferrals">
+              0
+            </strong>
+
+          </div>
+
+        </div>
+
+
+        <div class="stat-card">
+
+          <span class="stat-icon">
+            ◉
+          </span>
+
+          <div>
+
+            <small>
+              Account
+            </small>
+
+            <strong>
+              Active
+            </strong>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+
+    <!-- ===================================
+         TASK PAGE
+    ==================================== -->
+
+    <section
+      id="tasksPage"
+      class="page"
+    >
+
+      <div class="page-head">
+
+        <div>
+
+          <h1>
+            Earn Tasks
+          </h1>
+
+          <p>
+            Complete tasks and earn rewards
+          </p>
+
+        </div>
+
+        <div class="head-art">
+          ✓
+        </div>
+
+      </div>
+
+
+      <div
+        id="taskList"
+        class="task-list"
+      >
+
+        <div class="empty-state">
+          Loading tasks...
+        </div>
+
+      </div>
+
+    </section>
+
+
+
+    <!-- ===================================
+         WALLET PAGE
+    ==================================== -->
+
+    <section
+      id="walletPage"
+      class="page"
+    >
+
+      <div class="page-head">
+
+        <div>
+
+          <h1>
+            Wallet
+          </h1>
+
+          <p>
+            Manage your earnings
+          </p>
+
+        </div>
+
+        <div class="head-art">
+          $
+        </div>
+
+      </div>
+
+
+      <div class="wallet-balance-card">
+
+        <span>
+          Available Balance
+        </span>
+
+        <strong>
+          <span id="walletBalance">
+            0.00
+          </span>
+
+          USDT
+        </strong>
+
+      </div>
+
+
+      <div class="form-card">
+
+        <h3>
+          Withdraw Funds
+        </h3>
+
+
+        <div class="field">
+
+          <label>
+            Amount (USDT)
+          </label>
+
+          <input
+            id="withdrawAmount"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="Enter amount"
+          >
+
+        </div>
+
+
+        <div class="field">
+
+          <label>
+            Network
+          </label>
+
+          <select id="withdrawNetwork">
+
+            <option value="">
+              Select Network
+            </option>
+
+            <option value="TRC20">
+              USDT TRC20
+            </option>
+
+            <option value="BEP20">
+              USDT BEP20
+            </option>
+
+            <option value="ERC20">
+              USDT ERC20
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <div class="field">
+
+          <label>
+            Wallet Address
+          </label>
+
+          <input
+            id="withdrawAddress"
+            type="text"
+            placeholder="Enter wallet address"
+          >
+
+        </div>
+
+
+        <button
+          id="withdrawButton"
+          class="primary-btn wide"
+        >
+          Request Withdrawal
+        </button>
+
+      </div>
+
+
+      <div class="section-title-row">
+
+        <h2>
+          Withdrawal History
+        </h2>
+
+      </div>
+
+
+      <div
+        id="withdrawalHistory"
+        class="history-list"
+      >
+
+        <div class="empty-state">
+          No withdrawals yet.
+        </div>
+
+      </div>
+
+    </section>
+
+
+
+    <!-- ===================================
+         REFERRAL PAGE
+    ==================================== -->
+
+    <section
+      id="referralsPage"
+      class="page"
+    >
+
+      <div class="page-head">
+
+        <div>
+
+          <h1>
+            Referrals
+          </h1>
+
+          <p>
+            Invite friends and earn rewards
+          </p>
+
+        </div>
+
+        <div class="head-art">
+          ♧
+        </div>
+
+      </div>
+
+
+      <div class="referral-card">
+
+        <div class="referral-icon">
+          ♧
+        </div>
+
+        <h2>
+          Invite Friends
+        </h2>
+
+        <p>
+          Share your referral link and earn
+          rewards when your friends join.
+        </p>
+
+        <button
+          id="inviteButton"
+          class="primary-btn wide"
+        >
+          Invite Friends
+        </button>
+
+      </div>
+
+
+      <div class="referral-stats">
+
+        <div>
+
+          <span>
+            Total Referrals
+          </span>
+
+          <strong id="referralCount">
+            0
+          </strong>
+
+        </div>
+
+
+        <div>
+
+          <span>
+            Referral Earnings
+          </span>
+
+          <strong id="referralEarnings">
+            0.00 USDT
+          </strong>
+
+        </div>
+
+      </div>
+
+
+      <div class="section-title-row">
+
+        <h2>
+          Your Referrals
+        </h2>
+
+      </div>
+
+
+      <div
+        id="referralList"
+        class="history-list"
+      >
+
+        <div class="empty-state">
+          No referrals yet.
+        </div>
+
+      </div>
+
+    </section>
+
+
+
+    <!-- ===================================
+         ADMIN PAGE
+    ==================================== -->
+
+    <section
+      id="adminPage"
+      class="page"
+    >
+
+      <div class="page-head">
+
+        <div>
+
+          <h1>
+            Admin Panel
+          </h1>
+
+          <p>
+            Manage ST Earn
+          </p>
+
+        </div>
+
+        <div class="head-art">
+          ⚙
+        </div>
+
+      </div>
+
+
+      <!-- ADMIN TABS -->
+
+      <div class="admin-tabs">
+
+        <button
+          class="admin-tab active"
+          data-admin-tab="adminSettings"
+        >
+          🎨
+          <span>
+            Settings
+          </span>
+        </button>
+
+
+        <button
+          class="admin-tab"
+          data-admin-tab="adminTasks"
+        >
+          ✓
+          <span>
+            Tasks
+          </span>
+        </button>
+
+
+        <button
+          class="admin-tab"
+          data-admin-tab="adminUsers"
+        >
+          ♧
+          <span>
+            Users
+          </span>
+        </button>
+
+
+        <button
+          class="admin-tab"
+          data-admin-tab="adminWithdrawals"
+        >
+          $
+          <span>
+            Withdraw
+          </span>
+        </button>
+
+      </div>
+
+
+
+      <!-- ADMIN SETTINGS -->
+
+      <div
+        id="adminSettings"
+        class="admin-panel"
+      >
+
+        <div class="info-card">
+
+          <strong>
+            App Settings
+          </strong>
+
+          <p>
+            Control your Mini App from here.
+          </p>
+
+        </div>
+
+
+        <div class="form-grid">
+
+          <div class="field">
+
+            <label>
+              App Name
+            </label>
+
+            <input
+              id="a_app_name"
+              type="text"
+            >
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              Logo URL
+            </label>
+
+            <input
+              id="a_logo_url"
+              type="text"
+              placeholder="https://..."
+            >
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              Global Theme
+            </label>
+
+            <select id="a_global_theme">
+            </select>
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              Allow User Theme
+            </label>
+
+            <select id="a_allow_user_theme">
+
+              <option value="false">
+                OFF
+              </option>
+
+              <option value="true">
+                ON
+              </option>
+
+            </select>
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              Referral Reward
+            </label>
+
+            <input
+              id="a_referral_reward"
+              type="number"
+              step="0.01"
+            >
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              Minimum Withdrawal
+            </label>
+
+            <input
+              id="a_minimum_withdraw"
+              type="number"
+              step="0.01"
+            >
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              Withdrawal Fee
+            </label>
+
+            <input
+              id="a_withdraw_fee"
+              type="number"
+              step="0.01"
+            >
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              Telegram Channel
+            </label>
+
+            <input
+              id="a_telegram_channel"
+              type="text"
+              placeholder="@channel"
+            >
+
+          </div>
+
+
+          <div class="field full">
+
+            <label>
+              Announcement
+            </label>
+
+            <input
+              id="a_announcement"
+              type="text"
+            >
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              Maintenance
+            </label>
+
+            <select id="a_maintenance">
+
+              <option value="false">
+                OFF
+              </option>
+
+              <option value="true">
+                ON
+              </option>
+
+            </select>
+
+          </div>
+
+        </div>
+
+
+        <button
+          id="saveAdminSettings"
+          class="primary-btn wide"
+        >
+          Save Settings
+        </button>
+
+      </div>
+
+
+
+      <!-- ADMIN TASKS -->
+
+      <div
+        id="adminTasks"
+        class="admin-panel"
+        style="display:none;"
+      >
+
+        <div class="info-card">
+
+          <strong>
+            Add New Task
+          </strong>
+
+          <p>
+            Create website, video,
+            Telegram or custom tasks.
+          </p>
+
+        </div>
+
+
+        <div class="form-grid">
+
+          <div class="field">
+
+            <label>
+              Task Title
+            </label>
+
+            <input
+              id="a_t_title"
+              type="text"
+              placeholder="Visit Website"
+            >
+
+          </div>
+
+
+          <div class="field">
+
+            <label>
+              Reward
+            </label>
+
+            <input
+              id="a_t_reward"
+              type="number"
+              step="0.01"
+              placeholder="0.10"
+            >
+
+          </div>
+
+
+          <div class="field full">
+
+            <label>
+              Description
+            </label>
+
+            <input
+              id="a_t_desc"
+              type="text"
+              placeholder="Complete this task"
+            >
+
+          </div>
+
+
+          <div class="field full">
+
+            <label>
+              Task URL
+            </label>
+
+            <input
+              id="a_t_url"
+              type="url"
+              placeholder="https://..."
+            >
+
+          </div>
+
+
+          <div class="field full">
+
+            <label>
+              Task Type
+            </label>
+
+            <select id="a_t_type">
+
+              <option value="visit">
+                Website Visit
+              </option>
+
+              <option value="watch">
+                Watch Video
+              </option>
+
+              <option value="telegram">
+                Join Telegram
+              </option>
+
+              <option value="custom">
+                Custom Task
+              </option>
+
+            </select>
+
+          </div>
+
+        </div>
+
+
+        <button
+          id="addAdminTask"
+          class="primary-btn wide"
+        >
+          + Add Task
+        </button>
+
+
+        <div
+          id="adminTaskList"
+          class="admin-list"
+        >
+        </div>
+
+      </div>
+
+
+
+      <!-- ADMIN USERS -->
+
+      <div
+        id="adminUsers"
+        class="admin-panel"
+        style="display:none;"
+      >
+
+        <button
+          id="refreshAdminUsers"
+          class="secondary-btn wide"
+        >
+          ↻ Refresh Users
+        </button>
+
+
+        <div
+          id="adminUserList"
+          class="admin-list"
+        >
+        </div>
+
+      </div>
+
+
+
+      <!-- ADMIN WITHDRAWALS -->
+
+      <div
+        id="adminWithdrawals"
+        class="admin-panel"
+        style="display:none;"
+      >
+
+        <button
+          id="refreshAdminWithdrawals"
+          class="secondary-btn wide"
+        >
+          ↻ Refresh Withdrawals
+        </button>
+
+
+        <div
+          id="adminWithdrawalList"
+          class="admin-list"
+        >
+        </div>
+
+      </div>
+
+    </section>
+
+
+
+    <!-- ===================================
+         BOTTOM NAVIGATION
+    ==================================== -->
+
+    <nav class="bottom-nav">
+
+      <button
+        class="nav active"
+        data-page="homePage"
+      >
+
+        <span>
+          ⌂
+        </span>
+
+        <small>
+          Home
+        </small>
+
+      </button>
+
+
+      <button
+        class="nav"
+        data-page="tasksPage"
+      >
+
+        <span>
+          ✓
+        </span>
+
+        <small>
+          Tasks
+        </small>
+
+      </button>
+
+
+      <button
+        class="nav"
+        data-page="walletPage"
+      >
+
+        <span>
+          $
+        </span>
+
+        <small>
+          Wallet
+        </small>
+
+      </button>
+
+
+      <button
+        class="nav"
+        data-page="referralsPage"
+      >
+
+        <span>
+          ♧
+        </span>
+
+        <small>
+          Referrals
+        </small>
+
+      </button>
+
+
+      <button
+        id="adminNavBtn"
+        class="nav admin-only"
+        data-page="adminPage"
+        style="display:none;"
+      >
+
+        <span>
+          ⚙
+        </span>
+
+        <small>
+          Admin
+        </small>
+
+      </button>
+
+    </nav>
+
+  </main>
+
+
+
+  <!-- =====================================
+       THREE DOT BOTTOM SHEET
+  ====================================== -->
+
+  <div
+    id="sheetOverlay"
+    class="sheet-overlay"
+  ></div>
+
+
+  <div
+    id="bottomSheet"
+    class="bottom-sheet"
+  >
+
+    <div class="sheet-handle"></div>
+
+
+    <div class="sheet-header">
+
+      <div>
+
+        <h3>
+          Menu
+        </h3>
+
+        <p>
+          ST Earn
+        </p>
+
+      </div>
+
+      <button
+        id="closeSheet"
+        class="sheet-close"
+      >
+        ×
+      </button>
+
+    </div>
+
+
+    <div class="sheet-menu">
+
+      <button
+        id="sheetRefresh"
+        class="sheet-item"
+      >
+
+        <span>
+          ↻
+        </span>
+
+        <div>
+
+          <b>
+            Refresh
+          </b>
+
+          <small>
+            Update account
+          </small>
+
+        </div>
+
+      </button>
+
+
+      <button
+        id="sheetHistory"
+        class="sheet-item"
+      >
+
+        <span>
+          $
+        </span>
+
+        <div>
+
+          <b>
+            Withdrawal History
+          </b>
+
+          <small>
+            View your withdrawals
+          </small>
+
+        </div>
+
+      </button>
+
+
+      <button
+        id="sheetInvite"
+        class="sheet-item"
+      >
+
+        <span>
+          ♧
+        </span>
+
+        <div>
+
+          <b>
+            Invite Friends
+          </b>
+
+          <small>
+            Share your referral link
+          </small>
+
+        </div>
+
+      </button>
+
+
+      <button
+        id="themeSheetBtn"
+        class="sheet-item"
+      >
+
+        <span>
+          🎨
+        </span>
+
+        <div>
+
+          <b>
+            Theme
+          </b>
+
+          <small id="themeHint">
+            Admin controlled
+          </small>
+
+        </div>
+
+      </button>
+
+
+      <!-- ADMIN ONLY -->
+
+      <button
+        id="adminSheetBtn"
+        class="sheet-item admin-only"
+        style="display:none;"
+      >
+
+        <span>
+          ⚙
+        </span>
+
+        <div>
+
+          <b>
+            Admin Panel
+          </b>
+
+          <small>
+            Manage Mini App
+          </small>
+
+        </div>
+
+      </button>
+
+    </div>
+
+
+    <button
+      id="sheetCloseBottom"
+      class="secondary-btn wide"
+    >
+      Close
+    </button>
+
+  </div>
+
+
+
+  <!-- =====================================
+       THEME SHEET
+  ====================================== -->
+
+  <div
+    id="themeOverlay"
+    class="sheet-overlay"
+  ></div>
+
+
+  <div
+    id="themeSheet"
+    class="bottom-sheet"
+  >
+
+    <div class="sheet-handle"></div>
+
+
+    <div class="sheet-header">
+
+      <div>
+
+        <h3>
+          Choose Theme
+        </h3>
+
+        <p>
+          Personal appearance
+        </p>
+
+      </div>
+
+
+      <button
+        id="closeThemeSheet"
+        class="sheet-close"
+      >
+        ×
+      </button>
+
+    </div>
+
+
+    <div
+      id="themeList"
+      class="theme-list"
+    >
+    </div>
+
+  </div>
+
+
+
+  <!-- =====================================
+       TASK DETAILS MODAL
+  ====================================== -->
+
+  <div
+    id="taskModalOverlay"
+    class="modal-overlay"
+  ></div>
+
+
+  <div
+    id="taskModal"
+    class="modal-box"
+  >
+
+    <button
+      id="closeTaskModal"
+      class="modal-close"
+    >
+      ×
+    </button>
+
+
+    <div
+      id="taskModalIcon"
+      class="modal-icon"
+    >
+      ✓
+    </div>
+
+
+    <h2 id="taskModalTitle">
+      Task
+    </h2>
+
+
+    <p id="taskModalDescription">
+      Complete this task.
+    </p>
+
+
+    <button
+      id="taskOpenButton"
+      class="primary-btn wide"
+    >
+      Open Task
+    </button>
+
+
+    <button
+      id="taskCompleteButton"
+      class="secondary-btn wide"
+    >
+      Claim Reward
+    </button>
+
+  </div>
+
+
+
+  <!-- =====================================
+       ALERT
+  ====================================== -->
+
+  <div
+    id="toast"
+    class="toast"
+  >
+    <span id="toastText">
+      Done
+    </span>
+  </div>
+
+
+
+  <!-- =====================================
+       JAVASCRIPT
+  ====================================== -->
+
+  <script src="/assets/js/app.js"></script>
+
+</body>
+</html>
