@@ -9,6 +9,10 @@ const PORT = Number(process.env.PORT || 10000);
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+/* =========================================================
+   ENVIRONMENT
+========================================================= */
+
 const DATABASE_URL = String(process.env.DATABASE_URL || "").trim();
 const BOT_TOKEN = String(process.env.BOT_TOKEN || "").trim();
 const ADMIN_ID = String(process.env.ADMIN_TELEGRAM_ID || "").trim();
@@ -20,11 +24,18 @@ if (!DATABASE_URL) {
   console.warn("WARNING: DATABASE_URL is missing.");
 }
 
+/* =========================================================
+   DATABASE
+========================================================= */
+
 const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
+async function q(sql, params = []) {
+  return pool.query(sql, params);
+}
 
 /* =========================================================
    THEMES
@@ -37,81 +48,73 @@ const THEMES = {
     secondary: "#ffda3d",
     background: "#0d0f12",
     card: "#15181d",
-    text: "#fff",
+    text: "#ffffff",
     muted: "#9da3ad"
   },
-
   emerald: {
     name: "Emerald",
     primary: "#20d48a",
     secondary: "#58f0aa",
     background: "#07110d",
     card: "#101c16",
-    text: "#fff",
+    text: "#ffffff",
     muted: "#98aaa1"
   },
-
   ocean: {
     name: "Ocean Blue",
     primary: "#28a9ff",
     secondary: "#67c8ff",
     background: "#071018",
     card: "#111c25",
-    text: "#fff",
+    text: "#ffffff",
     muted: "#9aaebd"
   },
-
   purple: {
     name: "Royal Purple",
     primary: "#a66cff",
     secondary: "#c49aff",
     background: "#0e0915",
     card: "#18121f",
-    text: "#fff",
+    text: "#ffffff",
     muted: "#aaa0b4"
   },
-
   ruby: {
     name: "Ruby Red",
     primary: "#ff405c",
     secondary: "#ff7185",
     background: "#14090c",
     card: "#211216",
-    text: "#fff",
+    text: "#ffffff",
     muted: "#b5a0a5"
   },
-
   cyan: {
     name: "Cyan",
     primary: "#22dce6",
     secondary: "#6df3f7",
     background: "#061214",
     card: "#101c1e",
-    text: "#fff",
+    text: "#ffffff",
     muted: "#9db3b5"
   },
-
   sunset: {
     name: "Sunset Orange",
     primary: "#ff8a00",
     secondary: "#ffc14d",
     background: "#160d06",
     card: "#21150c",
-    text: "#fff",
+    text: "#ffffff",
     muted: "#b9a99a"
   },
-
   pink: {
     name: "Pink",
     primary: "#ff4fa3",
     secondary: "#ff85c1",
     background: "#160914",
     card: "#21121d",
-    text: "#fff",
+    text: "#ffffff",
     muted: "#b9a5b1"
   }
 };
-
 
 /* =========================================================
    DEFAULT SETTINGS
@@ -130,17 +133,11 @@ const DEFAULT_SETTINGS = {
   telegram_channel: ""
 };
 
-
 /* =========================================================
-   DATABASE
+   DATABASE INIT
 ========================================================= */
 
-async function q(sql, params = []) {
-  return pool.query(sql, params);
-}
-
 async function initDB() {
-
   await q(`
     CREATE TABLE IF NOT EXISTS users(
       id SERIAL PRIMARY KEY,
@@ -204,27 +201,23 @@ async function initDB() {
     )
   `);
 
-  for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) {
+  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     await q(
-      `
-      INSERT INTO settings(key,value)
-      VALUES($1,$2)
-      ON CONFLICT(key) DO NOTHING
-      `,
-      [k, String(v)]
+      `INSERT INTO settings(key,value)
+       VALUES($1,$2)
+       ON CONFLICT(key) DO NOTHING`,
+      [key, String(value)]
     );
   }
 }
 
-
 async function settings() {
-
   const s = { ...DEFAULT_SETTINGS };
 
   const r = await q("SELECT key,value FROM settings");
 
-  for (const x of r.rows) {
-    s[x.key] = x.value;
+  for (const row of r.rows) {
+    s[row.key] = row.value;
   }
 
   s.allow_user_theme = String(s.allow_user_theme) === "true";
@@ -236,146 +229,127 @@ async function settings() {
   return s;
 }
 
-
 async function saveSettings(values) {
-
-  for (const [k, v] of Object.entries(values)) {
-
-    if (!(k in DEFAULT_SETTINGS)) {
-      continue;
-    }
+  for (const [key, value] of Object.entries(values)) {
+    if (!(key in DEFAULT_SETTINGS)) continue;
 
     await q(
-      `
-      INSERT INTO settings(key,value)
-      VALUES($1,$2)
-      ON CONFLICT(key)
-      DO UPDATE SET value=EXCLUDED.value
-      `,
-      [k, String(v)]
+      `INSERT INTO settings(key,value)
+       VALUES($1,$2)
+       ON CONFLICT(key)
+       DO UPDATE SET value=EXCLUDED.value`,
+      [key, String(value)]
     );
   }
 }
 
-
 /* =========================================================
-   TELEGRAM WEB APP AUTH
+   TELEGRAM WEBAPP AUTH
 ========================================================= */
 
 function verify(initData) {
+  if (!initData || !BOT_TOKEN) return null;
 
-  if (!initData || !BOT_TOKEN) {
-    return null;
-  }
+  const params = new URLSearchParams(initData);
+  const hash = params.get("hash");
 
-  const p = new URLSearchParams(initData);
-  const hash = p.get("hash");
+  if (!hash) return null;
 
-  if (!hash) {
-    return null;
-  }
+  params.delete("hash");
 
-  p.delete("hash");
-
-  const check = [...p.entries()]
+  const dataCheckString = [...params.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}=${v}`)
+    .map(([key, value]) => `${key}=${value}`)
     .join("\n");
 
-  const secret = crypto
+  const secretKey = crypto
     .createHmac("sha256", "WebAppData")
     .update(BOT_TOKEN)
     .digest();
 
-  const calc = crypto
-    .createHmac("sha256", secret)
-    .update(check)
+  const calculatedHash = crypto
+    .createHmac("sha256", secretKey)
+    .update(dataCheckString)
     .digest("hex");
 
   if (
-    hash.length !== calc.length ||
+    hash.length !== calculatedHash.length ||
     !crypto.timingSafeEqual(
       Buffer.from(hash),
-      Buffer.from(calc)
+      Buffer.from(calculatedHash)
     )
   ) {
     return null;
   }
 
-  const authDate = Number(p.get("auth_date") || 0);
+  const authDate = Number(params.get("auth_date") || 0);
 
-  if (!authDate || Date.now() / 1000 - authDate > 86400) {
+  if (!authDate) return null;
+
+  if (Date.now() / 1000 - authDate > 86400) {
     return null;
   }
 
   try {
-    return JSON.parse(p.get("user") || "{}");
+    return JSON.parse(params.get("user") || "{}");
   } catch {
     return null;
   }
 }
-
 
 /* =========================================================
    USER
 ========================================================= */
 
 async function getUser(tg, start = "") {
-
-  const tid = String(tg.id);
+  const telegramId = String(tg.id);
 
   let r = await q(
     "SELECT * FROM users WHERE telegram_id=$1",
-    [tid]
+    [telegramId]
   );
 
   if (r.rows.length) {
-
     await q(
-      `
-      UPDATE users
-      SET
-        username=$1,
-        first_name=$2,
-        last_name=$3,
-        updated_at=NOW()
-      WHERE telegram_id=$4
-      `,
+      `UPDATE users
+       SET username=$1,
+           first_name=$2,
+           last_name=$3,
+           updated_at=NOW()
+       WHERE telegram_id=$4`,
       [
         tg.username || "",
         tg.first_name || "",
         tg.last_name || "",
-        tid
+        telegramId
       ]
     );
 
     r = await q(
       "SELECT * FROM users WHERE telegram_id=$1",
-      [tid]
+      [telegramId]
     );
 
     return r.rows[0];
   }
 
-  let ref = "";
+  let referredBy = "";
 
-  const m = String(start).match(/^ref_(\d+)$/);
+  const match = String(start).match(/^ref_(\d+)$/);
 
-  if (m && m[1] !== tid) {
-
+  if (match && match[1] !== telegramId) {
     const rr = await q(
       "SELECT telegram_id FROM users WHERE telegram_id=$1",
-      [m[1]]
+      [match[1]]
     );
 
     if (rr.rows.length) {
-      ref = m[1];
+      referredBy = match[1];
     }
   }
 
   r = await q(
-    `
-    INSERT INTO users(
+    `INSERT INTO users(
       telegram_id,
       username,
       first_name,
@@ -383,52 +357,45 @@ async function getUser(tg, start = "") {
       referred_by
     )
     VALUES($1,$2,$3,$4,$5)
-    RETURNING *
-    `,
+    RETURNING *`,
     [
-      tid,
+      telegramId,
       tg.username || "",
       tg.first_name || "",
       tg.last_name || "",
-      ref
+      referredBy
     ]
   );
 
-  if (ref) {
-
+  if (referredBy) {
     const s = await settings();
     const reward = Number(s.referral_reward || 0);
 
     await q(
-      `
-      UPDATE users
-      SET
-        referrals=referrals+1,
-        balance=balance+$1,
-        total_earned=total_earned+$1,
-        updated_at=NOW()
-      WHERE telegram_id=$2
-      `,
-      [reward, ref]
+      `UPDATE users
+       SET referrals=referrals+1,
+           balance=balance+$1,
+           total_earned=total_earned+$1,
+           updated_at=NOW()
+       WHERE telegram_id=$2`,
+      [reward, referredBy]
     );
   }
 
   return r.rows[0];
 }
 
-
 /* =========================================================
    AUTH MIDDLEWARE
 ========================================================= */
 
 async function auth(req, res, next) {
-
-  const init =
+  const initData =
     req.headers["x-telegram-init-data"] ||
     req.body?.initData ||
     "";
 
-  const tg = verify(init);
+  const tg = verify(initData);
 
   if (!tg) {
     return res.status(401).json({
@@ -437,9 +404,8 @@ async function auth(req, res, next) {
   }
 
   try {
-
     const start =
-      new URLSearchParams(init).get("start_param") || "";
+      new URLSearchParams(initData).get("start_param") || "";
 
     const user = await getUser(tg, start);
 
@@ -453,10 +419,8 @@ async function auth(req, res, next) {
     req.user = user;
 
     next();
-
-  } catch (e) {
-
-    console.error("AUTH:", e);
+  } catch (error) {
+    console.error("AUTH ERROR:", error);
 
     res.status(500).json({
       error: "Authentication failed."
@@ -464,13 +428,7 @@ async function auth(req, res, next) {
   }
 }
 
-
-/* =========================================================
-   ADMIN AUTH
-========================================================= */
-
 async function admin(req, res, next) {
-
   const secret =
     req.headers["x-admin-secret"] ||
     req.body?.adminSecret ||
@@ -480,12 +438,12 @@ async function admin(req, res, next) {
     return next();
   }
 
-  const init =
+  const initData =
     req.headers["x-telegram-init-data"] ||
     req.body?.initData ||
     "";
 
-  const tg = verify(init);
+  const tg = verify(initData);
 
   if (
     !tg ||
@@ -500,79 +458,667 @@ async function admin(req, res, next) {
   next();
 }
 
-
 /* =========================================================
-   OUTPUT HELPERS
+   USER OUTPUT
 ========================================================= */
 
-function userOut(u) {
-
+function userOut(user) {
   return {
-    id: u.id,
-    telegramId: u.telegram_id,
-    username: u.username,
-    firstName: u.first_name,
-    lastName: u.last_name,
-    balance: Number(u.balance),
-    totalEarned: Number(u.total_earned),
-    tasksDone: Number(u.tasks_done),
-    referrals: Number(u.referrals),
-    blocked: Boolean(u.blocked),
-    theme: u.theme || ""
+    id: user.id,
+    telegramId: user.telegram_id,
+    username: user.username,
+    firstName: user.first_name,
+    lastName: user.last_name,
+    balance: Number(user.balance),
+    totalEarned: Number(user.total_earned),
+    tasksDone: Number(user.tasks_done),
+    referrals: Number(user.referrals),
+    blocked: Boolean(user.blocked),
+    theme: user.theme || ""
   };
 }
 
-
-function themeData(s, u) {
-
-  let k = s.global_theme || "gold";
+function themeData(s, user) {
+  let key = s.global_theme || "gold";
 
   if (
     s.allow_user_theme &&
-    u?.theme &&
-    THEMES[u.theme]
+    user?.theme &&
+    THEMES[user.theme]
   ) {
-    k = u.theme;
+    key = user.theme;
   }
 
   return {
-    key: k,
-    ...(THEMES[k] || THEMES.gold)
+    key,
+    ...(THEMES[key] || THEMES.gold)
   };
 }
 
+/* =========================================================
+   WINGO ENGINE
+========================================================= */
+
+const WINGO_API =
+  "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
+
+const SIGNAL_INTERVAL_MS = 4000;
+
+let wingoState = {
+  live: false,
+  loading: false,
+  lastSync: null,
+  currentPeriod: null,
+  currentNumber: null,
+  nextPeriod: null,
+  prediction: null,
+  numbers: [],
+  confidence: 0,
+  pattern: "WAITING",
+  history: [],
+  stats: {
+    total: 0,
+    wins: 0,
+    losses: 0,
+    jackpots: 0,
+    winRate: 0
+  },
+  error: null
+};
+
+let savedSignal = null;
+let processedPeriod = null;
+
+/* ---------------------------------------------------------
+   FETCH WINGO API
+--------------------------------------------------------- */
+
+async function fetchWingoHistory() {
+  const controller = new AbortController();
+
+  const timeout = setTimeout(
+    () => controller.abort(),
+    8000
+  );
+
+  try {
+    const response = await fetch(
+      `${WINGO_API}?t=${Date.now()}`,
+      {
+        method: "GET",
+        cache: "no-store",
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json"
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Wingo API HTTP ${response.status}`);
+    }
+
+    const json = await response.json();
+
+    const list =
+      json?.data?.list ||
+      json?.list ||
+      [];
+
+    if (!Array.isArray(list) || !list.length) {
+      throw new Error("Wingo API returned empty history.");
+    }
+
+    return list;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/* ---------------------------------------------------------
+   NORMALIZE RESULT
+--------------------------------------------------------- */
+
+function normalizeRound(item) {
+  const issue = String(
+    item?.issueNumber ??
+    item?.issue ??
+    item?.period ??
+    ""
+  );
+
+  const rawNumber =
+    item?.number ??
+    item?.result ??
+    item?.openNumber ??
+    item?.winNumber;
+
+  const number = Number(rawNumber);
+
+  if (
+    !issue ||
+    !Number.isInteger(number) ||
+    number < 0 ||
+    number > 9
+  ) {
+    return null;
+  }
+
+  return {
+    issue,
+    number,
+    size: number >= 5 ? "BIG" : "SMALL",
+    raw: item
+  };
+}
+
+/* ---------------------------------------------------------
+   NEXT PERIOD
+--------------------------------------------------------- */
+
+function getNextPeriod(issue) {
+  try {
+    return String(BigInt(issue) + 1n);
+  } catch {
+    return null;
+  }
+}
+
+/* ---------------------------------------------------------
+   PATTERN ANALYSIS
+--------------------------------------------------------- */
+
+function analyzePattern(rounds) {
+  if (rounds.length < 5) {
+    return {
+      pattern: "WAITING",
+      prediction: null,
+      confidence: 0,
+      votes: {
+        big: 0,
+        small: 0
+      }
+    };
+  }
+
+  const recent = rounds.slice(0, 12);
+
+  let bigVotes = 0;
+  let smallVotes = 0;
+
+  /* Recent trend */
+  recent.slice(0, 6).forEach((r, index) => {
+    const weight = 6 - index;
+
+    if (r.size === "BIG") {
+      bigVotes += weight;
+    } else {
+      smallVotes += weight;
+    }
+  });
+
+  /* Last number tendency */
+  const last = recent[0];
+
+  if (last) {
+    if (last.number >= 5) {
+      smallVotes += 2;
+    } else {
+      bigVotes += 2;
+    }
+  }
+
+  /* Alternation */
+  if (recent.length >= 4) {
+    const a = recent[0].size;
+    const b = recent[1].size;
+    const c = recent[2].size;
+    const d = recent[3].size;
+
+    if (
+      a !== b &&
+      b !== c &&
+      c !== d
+    ) {
+      if (a === "BIG") {
+        smallVotes += 4;
+      } else {
+        bigVotes += 4;
+      }
+    }
+  }
+
+  /* Streak reversal */
+  let streak = 1;
+
+  for (let i = 1; i < recent.length; i++) {
+    if (recent[i].size === recent[0].size) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+
+  if (streak >= 3) {
+    if (recent[0].size === "BIG") {
+      smallVotes += streak * 2;
+    } else {
+      bigVotes += streak * 2;
+    }
+  }
+
+  const total = bigVotes + smallVotes;
+
+  if (!total) {
+    return {
+      pattern: "NEUTRAL",
+      prediction: "BIG",
+      confidence: 50,
+      votes: {
+        big: 0,
+        small: 0
+      }
+    };
+  }
+
+  const prediction =
+    bigVotes >= smallVotes
+      ? "BIG"
+      : "SMALL";
+
+  const winnerVotes =
+    prediction === "BIG"
+      ? bigVotes
+      : smallVotes;
+
+  let confidence =
+    Math.round(
+      (winnerVotes / total) * 100
+    );
+
+  confidence = Math.max(
+    50,
+    Math.min(92, confidence)
+  );
+
+  let pattern = "TREND";
+
+  if (streak >= 3) {
+    pattern = "STREAK REVERSAL";
+  } else if (
+    recent.length >= 4 &&
+    recent[0].size !== recent[1].size &&
+    recent[1].size !== recent[2].size
+  ) {
+    pattern = "ALTERNATING";
+  }
+
+  return {
+    pattern,
+    prediction,
+    confidence,
+    votes: {
+      big: bigVotes,
+      small: smallVotes
+    }
+  };
+}
+
+/* ---------------------------------------------------------
+   NUMBER CANDIDATES
+--------------------------------------------------------- */
+
+function selectNumbers(rounds, prediction) {
+  const allowed =
+    prediction === "BIG"
+      ? [5, 6, 7, 8, 9]
+      : [0, 1, 2, 3, 4];
+
+  const frequency = {};
+
+  for (const n of allowed) {
+    frequency[n] = 0;
+  }
+
+  rounds
+    .slice(0, 30)
+    .forEach((r) => {
+      if (allowed.includes(r.number)) {
+        frequency[r.number]++;
+      }
+    });
+
+  const ranked = [...allowed].sort(
+    (a, b) => {
+      if (frequency[b] !== frequency[a]) {
+        return frequency[b] - frequency[a];
+      }
+
+      return a - b;
+    }
+  );
+
+  return ranked.slice(0, 2);
+}
+
+/* ---------------------------------------------------------
+   EVALUATE PREVIOUS SIGNAL
+--------------------------------------------------------- */
+
+function evaluateSignal(actualRound) {
+  if (
+    !savedSignal ||
+    !actualRound ||
+    !savedSignal.period
+  ) {
+    return null;
+  }
+
+  if (
+    String(savedSignal.period) !==
+    String(actualRound.issue)
+  ) {
+    return null;
+  }
+
+  const resultNumber = actualRound.number;
+
+  let result = "LOSS";
+
+  if (
+    Array.isArray(savedSignal.numbers) &&
+    savedSignal.numbers.includes(resultNumber)
+  ) {
+    result = "JACKPOT";
+  } else if (
+    savedSignal.prediction ===
+    actualRound.size
+  ) {
+    result = "WIN";
+  }
+
+  return {
+    period: actualRound.issue,
+    prediction: savedSignal.prediction,
+    numbers: savedSignal.numbers || [],
+    actual: resultNumber,
+    actualSize: actualRound.size,
+    confidence: savedSignal.confidence,
+    result,
+    createdAt: savedSignal.createdAt
+  };
+}
+
+/* ---------------------------------------------------------
+   BUILD SIGNAL
+--------------------------------------------------------- */
+
+function buildSignal(rounds) {
+  if (!rounds.length) {
+    return null;
+  }
+
+  const current = rounds[0];
+
+  const nextPeriod =
+    getNextPeriod(current.issue);
+
+  if (!nextPeriod) {
+    return null;
+  }
+
+  const analysis =
+    analyzePattern(rounds);
+
+  if (!analysis.prediction) {
+    return null;
+  }
+
+  const numbers =
+    selectNumbers(
+      rounds,
+      analysis.prediction
+    );
+
+  return {
+    period: nextPeriod,
+    prediction: analysis.prediction,
+    numbers,
+    confidence: analysis.confidence,
+    pattern: analysis.pattern,
+    votes: analysis.votes,
+    createdAt: Date.now()
+  };
+}
+
+/* ---------------------------------------------------------
+   ENGINE SYNC
+--------------------------------------------------------- */
+
+async function syncWingo() {
+  if (wingoState.loading) return;
+
+  wingoState.loading = true;
+
+  try {
+    const rawList =
+      await fetchWingoHistory();
+
+    const rounds = rawList
+      .map(normalizeRound)
+      .filter(Boolean);
+
+    if (!rounds.length) {
+      throw new Error(
+        "No valid Wingo rounds found."
+      );
+    }
+
+    const current = rounds[0];
+
+    /*
+      IMPORTANT:
+      API issue number is the source of truth.
+      We do not generate the period ourselves.
+    */
+
+    if (
+      processedPeriod &&
+      processedPeriod !== current.issue &&
+      savedSignal
+    ) {
+      const evaluated =
+        evaluateSignal(current);
+
+      if (evaluated) {
+        wingoState.history.unshift(
+          evaluated
+        );
+
+        wingoState.history =
+          wingoState.history.slice(0, 100);
+
+        processedPeriod =
+          current.issue;
+
+        savedSignal = null;
+      }
+    }
+
+    /*
+      Create signal only when there is
+      no locked signal for the current
+      next period.
+    */
+
+    if (!savedSignal) {
+      const signal =
+        buildSignal(rounds);
+
+      if (signal) {
+        savedSignal = signal;
+      }
+    }
+
+    const stats = calculateStats(
+      wingoState.history
+    );
+
+    wingoState = {
+      ...wingoState,
+      live: true,
+      loading: false,
+      lastSync: new Date().toISOString(),
+      currentPeriod: current.issue,
+      currentNumber: current.number,
+      nextPeriod: savedSignal?.period || getNextPeriod(current.issue),
+      prediction: savedSignal?.prediction || null,
+      numbers: savedSignal?.numbers || [],
+      confidence: savedSignal?.confidence || 0,
+      pattern: savedSignal?.pattern || "WAITING",
+      history: wingoState.history,
+      stats,
+      error: null
+    };
+  } catch (error) {
+    wingoState.loading = false;
+    wingoState.error = error.message;
+
+    console.error(
+      "WINGO ENGINE ERROR:",
+      error.message
+    );
+  }
+}
+
+/* ---------------------------------------------------------
+   STATS
+--------------------------------------------------------- */
+
+function calculateStats(history) {
+  const total = history.length;
+
+  const wins = history.filter(
+    (x) => x.result === "WIN"
+  ).length;
+
+  const jackpots = history.filter(
+    (x) => x.result === "JACKPOT"
+  ).length;
+
+  const losses = history.filter(
+    (x) => x.result === "LOSS"
+  ).length;
+
+  const successful =
+    wins + jackpots;
+
+  const winRate =
+    total > 0
+      ? Math.round(
+          (successful / total) * 100
+        )
+      : 0;
+
+  return {
+    total,
+    wins,
+    losses,
+    jackpots,
+    winRate
+  };
+}
+
+/* ---------------------------------------------------------
+   PUBLIC WINGO API
+--------------------------------------------------------- */
+
+app.get("/api/wingo", async (req, res) => {
+  try {
+    if (
+      !wingoState.live ||
+      !wingoState.lastSync
+    ) {
+      await syncWingo();
+    }
+
+    res.json({
+      success: true,
+      market: "WinGo 1M",
+      period: wingoState.nextPeriod,
+      currentPeriod: wingoState.currentPeriod,
+      currentNumber: wingoState.currentNumber,
+      signal: wingoState.prediction,
+      numbers: wingoState.numbers,
+      confidence: wingoState.confidence,
+      pattern: wingoState.pattern,
+      stats: wingoState.stats,
+      history: wingoState.history.slice(0, 30),
+      updatedAt: wingoState.lastSync,
+      live: wingoState.live,
+      error: wingoState.error
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: "Unable to load Wingo signal."
+    });
+  }
+});
+
+/* ---------------------------------------------------------
+   WINGO HISTORY API
+--------------------------------------------------------- */
+
+app.get("/api/wingo/history", async (req, res) => {
+  res.json({
+    success: true,
+    history: wingoState.history,
+    stats: wingoState.stats
+  });
+});
+
+/* ---------------------------------------------------------
+   BACKGROUND ENGINE
+--------------------------------------------------------- */
+
+setInterval(
+  () => {
+    syncWingo().catch((error) => {
+      console.error(
+        "Background Wingo error:",
+        error.message
+      );
+    });
+  },
+  SIGNAL_INTERVAL_MS
+);
 
 /* =========================================================
    USER API
 ========================================================= */
 
 app.get("/health", async (req, res) => {
-
   try {
-
     await q("SELECT 1");
 
     res.json({
       ok: true,
       database: true,
-      service: "ST Earn"
+      service: "ST Earn",
+      wingo: wingoState.live
     });
-
-  } catch (e) {
-
+  } catch (error) {
     res.status(500).json({
       ok: false,
       database: false,
-      error: e.message
+      error: error.message
     });
   }
 });
 
-
 app.get("/api/config", async (req, res) => {
-
   try {
-
     const s = await settings();
 
     res.json({
@@ -585,20 +1131,15 @@ app.get("/api/config", async (req, res) => {
       allowUserTheme: s.allow_user_theme,
       themes: THEMES
     });
-
-  } catch (e) {
-
+  } catch {
     res.status(500).json({
       error: "Unable to load configuration."
     });
   }
 });
 
-
 app.get("/api/me", auth, async (req, res) => {
-
   try {
-
     const s = await settings();
 
     const r = await q(
@@ -606,23 +1147,21 @@ app.get("/api/me", auth, async (req, res) => {
       [req.user.id]
     );
 
-    const u = r.rows[0];
+    const user = r.rows[0];
 
     res.json({
-      isAdmin:
-        Boolean(
-          ADMIN_ID &&
-          String(u.telegram_id) === ADMIN_ID
-        ),
-
-      user: userOut(u),
-
-      themeData: themeData(s, u)
+      isAdmin: Boolean(
+        ADMIN_ID &&
+        String(user.telegram_id) === ADMIN_ID
+      ),
+      user: userOut(user),
+      themeData: themeData(s, user)
     });
-
-  } catch (e) {
-
-    console.error(e);
+  } catch (error) {
+    console.error(
+      "ME API ERROR:",
+      error
+    );
 
     res.status(500).json({
       error: "Unable to load account."
@@ -630,39 +1169,26 @@ app.get("/api/me", auth, async (req, res) => {
   }
 });
 
-
-/* =========================================================
-   TASKS
-========================================================= */
-
 app.get("/api/tasks", auth, async (req, res) => {
-
   try {
-
     const r = await q(
-      `
-      SELECT
-        t.*,
-        CASE
-          WHEN tc.id IS NULL THEN FALSE
-          ELSE TRUE
-        END completed
-
-      FROM tasks t
-
-      LEFT JOIN task_completions tc
-        ON tc.task_id=t.id
+      `SELECT
+         t.*,
+         CASE
+           WHEN tc.id IS NULL THEN FALSE
+           ELSE TRUE
+         END completed
+       FROM tasks t
+       LEFT JOIN task_completions tc
+         ON tc.task_id=t.id
         AND tc.user_id=$1
-
-      WHERE t.active=TRUE
-
-      ORDER BY t.id DESC
-      `,
+       WHERE t.active=TRUE
+       ORDER BY t.id DESC`,
       [req.user.id]
     );
 
     res.json({
-      tasks: r.rows.map(t => ({
+      tasks: r.rows.map((t) => ({
         id: t.id,
         title: t.title,
         description: t.description,
@@ -672,10 +1198,8 @@ app.get("/api/tasks", auth, async (req, res) => {
         completed: Boolean(t.completed)
       }))
     });
-
-  } catch (e) {
-
-    console.error(e);
+  } catch (error) {
+    console.error(error);
 
     res.status(500).json({
       error: "Unable to load tasks."
@@ -683,839 +1207,883 @@ app.get("/api/tasks", auth, async (req, res) => {
   }
 });
 
+app.post(
+  "/api/tasks/:id/complete",
+  auth,
+  async (req, res) => {
+    const id = Number(req.params.id);
 
-app.post("/api/tasks/:id/complete", auth, async (req, res) => {
-
-  const id = Number(req.params.id);
-
-  if (!Number.isInteger(id)) {
-    return res.status(400).json({
-      error: "Invalid task ID."
-    });
-  }
-
-  const c = await pool.connect();
-
-  try {
-
-    await c.query("BEGIN");
-
-    const tr = await c.query(
-      `
-      SELECT *
-      FROM tasks
-      WHERE id=$1
-      AND active=TRUE
-      FOR UPDATE
-      `,
-      [id]
-    );
-
-    if (!tr.rows.length) {
-
-      await c.query("ROLLBACK");
-
-      return res.status(404).json({
-        error: "Task not found."
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({
+        error: "Invalid task ID."
       });
     }
 
-    const ex = await c.query(
-      `
-      SELECT id
-      FROM task_completions
-      WHERE user_id=$1
-      AND task_id=$2
-      `,
-      [req.user.id, id]
-    );
+    const connection =
+      await pool.connect();
 
-    if (ex.rows.length) {
+    try {
+      await connection.query("BEGIN");
 
-      await c.query("ROLLBACK");
+      const task =
+        await connection.query(
+          `SELECT *
+           FROM tasks
+           WHERE id=$1
+             AND active=TRUE
+           FOR UPDATE`,
+          [id]
+        );
 
-      return res.status(409).json({
-        error: "Task already completed."
-      });
-    }
+      if (!task.rows.length) {
+        await connection.query("ROLLBACK");
 
-    const reward = Number(tr.rows[0].reward);
+        return res.status(404).json({
+          error: "Task not found."
+        });
+      }
 
-    await c.query(
-      `
-      INSERT INTO task_completions(
-        user_id,
-        task_id,
+      const existing =
+        await connection.query(
+          `SELECT id
+           FROM task_completions
+           WHERE user_id=$1
+             AND task_id=$2`,
+          [req.user.id, id]
+        );
+
+      if (existing.rows.length) {
+        await connection.query("ROLLBACK");
+
+        return res.status(409).json({
+          error: "Task already completed."
+        });
+      }
+
+      const reward =
+        Number(task.rows[0].reward);
+
+      await connection.query(
+        `INSERT INTO task_completions(
+          user_id,
+          task_id,
+          reward
+        )
+        VALUES($1,$2,$3)`,
+        [
+          req.user.id,
+          id,
+          reward
+        ]
+      );
+
+      await connection.query(
+        `UPDATE users
+         SET balance=balance+$1,
+             total_earned=total_earned+$1,
+             tasks_done=tasks_done+1,
+             updated_at=NOW()
+         WHERE id=$2`,
+        [
+          reward,
+          req.user.id
+        ]
+      );
+
+      await connection.query("COMMIT");
+
+      res.json({
+        success: true,
         reward
-      )
-      VALUES($1,$2,$3)
-      `,
-      [req.user.id, id, reward]
-    );
+      });
+    } catch (error) {
+      await connection.query("ROLLBACK");
 
-    await c.query(
-      `
-      UPDATE users
-      SET
-        balance=balance+$1,
-        total_earned=total_earned+$1,
-        tasks_done=tasks_done+1,
-        updated_at=NOW()
-      WHERE id=$2
-      `,
-      [reward, req.user.id]
-    );
+      console.error(error);
 
-    await c.query("COMMIT");
-
-    res.json({
-      success: true,
-      reward
-    });
-
-  } catch (e) {
-
-    await c.query("ROLLBACK");
-
-    console.error(e);
-
-    res.status(500).json({
-      error: "Could not complete task."
-    });
-
-  } finally {
-
-    c.release();
+      res.status(500).json({
+        error: "Could not complete task."
+      });
+    } finally {
+      connection.release();
+    }
   }
-});
-
-
-/* =========================================================
-   USER THEME
-========================================================= */
+);
 
 app.post("/api/theme", auth, async (req, res) => {
-
   const s = await settings();
 
   if (!s.allow_user_theme) {
-
     return res.status(403).json({
       error: "User theme changing is disabled."
     });
   }
 
-  const t = String(req.body.theme || "");
+  const theme =
+    String(req.body.theme || "");
 
-  if (!THEMES[t]) {
-
+  if (!THEMES[theme]) {
     return res.status(400).json({
       error: "Invalid theme."
     });
   }
 
   await q(
-    `
-    UPDATE users
-    SET theme=$1,
-        updated_at=NOW()
-    WHERE id=$2
-    `,
-    [t, req.user.id]
+    `UPDATE users
+     SET theme=$1,
+         updated_at=NOW()
+     WHERE id=$2`,
+    [
+      theme,
+      req.user.id
+    ]
   );
 
   res.json({
     success: true,
-    theme: t
+    theme
   });
 });
 
-
-/* =========================================================
-   REFERRALS
-========================================================= */
-
 app.get("/api/referrals", auth, async (req, res) => {
-
   const r = await q(
-    `
-    SELECT
-      telegram_id,
-      username,
-      first_name,
-      created_at
-    FROM users
-    WHERE referred_by=$1
-    ORDER BY created_at DESC
-    `,
+    `SELECT
+       telegram_id,
+       username,
+       first_name,
+       created_at
+     FROM users
+     WHERE referred_by=$1
+     ORDER BY created_at DESC`,
     [req.user.telegram_id]
   );
 
   const s = await settings();
 
-  const base = BOT_USERNAME
-    ? `https://t.me/${BOT_USERNAME}`
-    : "";
+  const base =
+    BOT_USERNAME
+      ? `https://t.me/${BOT_USERNAME}`
+      : "";
 
   res.json({
-    referralReward: Number(s.referral_reward),
-    referralLink: base
-      ? `${base}?start=ref_${req.user.telegram_id}`
-      : "",
+    referralReward:
+      Number(s.referral_reward),
+
+    referralLink:
+      base
+        ? `${base}?start=ref_${req.user.telegram_id}`
+        : "",
+
     referrals: r.rows
   });
 });
 
-
 /* =========================================================
-   WITHDRAW
+   WITHDRAWALS
 ========================================================= */
 
-app.post("/api/withdrawals", auth, async (req, res) => {
+app.post(
+  "/api/withdrawals",
+  auth,
+  async (req, res) => {
+    const s = await settings();
 
-  const s = await settings();
+    const amount =
+      Number(req.body.amount || 0);
 
-  const amount = Number(req.body.amount || 0);
+    const network =
+      String(req.body.network || "").trim();
 
-  const network =
-    String(req.body.network || "").trim();
+    const address =
+      String(req.body.address || "").trim();
 
-  const address =
-    String(req.body.address || "").trim();
-
-  if (!Number.isFinite(amount) || amount <= 0) {
-
-    return res.status(400).json({
-      error: "Invalid withdrawal amount."
-    });
-  }
-
-  if (amount < s.minimum_withdraw) {
-
-    return res.status(400).json({
-      error:
-        `Minimum withdrawal is ${s.minimum_withdraw} USDT.`
-    });
-  }
-
-  if (!network || !address) {
-
-    return res.status(400).json({
-      error: "Network and address are required."
-    });
-  }
-
-  const c = await pool.connect();
-
-  try {
-
-    await c.query("BEGIN");
-
-    const ur = await c.query(
-      "SELECT * FROM users WHERE id=$1 FOR UPDATE",
-      [req.user.id]
-    );
-
-    const u = ur.rows[0];
-
-    if (!u || Number(u.balance) < amount) {
-
-      await c.query("ROLLBACK");
-
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0
+    ) {
       return res.status(400).json({
-        error: "Insufficient balance."
+        error: "Invalid withdrawal amount."
       });
     }
 
-    const final = Math.max(
-      0,
-      amount - Number(s.withdraw_fee || 0)
-    );
+    if (
+      amount <
+      s.minimum_withdraw
+    ) {
+      return res.status(400).json({
+        error:
+          `Minimum withdrawal is ${s.minimum_withdraw} USDT.`
+      });
+    }
 
-    await c.query(
-      `
-      UPDATE users
-      SET
-        balance=balance-$1,
-        updated_at=NOW()
-      WHERE id=$2
-      `,
-      [amount, req.user.id]
-    );
+    if (!network || !address) {
+      return res.status(400).json({
+        error:
+          "Network and address are required."
+      });
+    }
 
-    const wr = await c.query(
-      `
-      INSERT INTO withdrawals(
-        user_id,
-        amount,
-        network,
-        address,
-        status
-      )
-      VALUES($1,$2,$3,$4,'pending')
-      RETURNING *
-      `,
-      [
-        req.user.id,
-        final,
-        network,
-        address
-      ]
-    );
+    const connection =
+      await pool.connect();
 
-    await c.query("COMMIT");
+    try {
+      await connection.query("BEGIN");
+
+      const userResult =
+        await connection.query(
+          `SELECT *
+           FROM users
+           WHERE id=$1
+           FOR UPDATE`,
+          [req.user.id]
+        );
+
+      const user =
+        userResult.rows[0];
+
+      if (
+        !user ||
+        Number(user.balance) < amount
+      ) {
+        await connection.query("ROLLBACK");
+
+        return res.status(400).json({
+          error: "Insufficient balance."
+        });
+      }
+
+      const finalAmount =
+        Math.max(
+          0,
+          amount -
+          Number(s.withdraw_fee || 0)
+        );
+
+      await connection.query(
+        `UPDATE users
+         SET balance=balance-$1,
+             updated_at=NOW()
+         WHERE id=$2`,
+        [
+          amount,
+          req.user.id
+        ]
+      );
+
+      const withdrawal =
+        await connection.query(
+          `INSERT INTO withdrawals(
+            user_id,
+            amount,
+            network,
+            address,
+            status
+          )
+          VALUES($1,$2,$3,$4,'pending')
+          RETURNING *`,
+          [
+            req.user.id,
+            finalAmount,
+            network,
+            address
+          ]
+        );
+
+      await connection.query("COMMIT");
+
+      res.json({
+        success: true,
+        withdrawal:
+          withdrawal.rows[0]
+      });
+    } catch (error) {
+      await connection.query("ROLLBACK");
+
+      console.error(error);
+
+      res.status(500).json({
+        error: "Withdrawal failed."
+      });
+    } finally {
+      connection.release();
+    }
+  }
+);
+
+app.get(
+  "/api/withdrawals",
+  auth,
+  async (req, res) => {
+    const r = await q(
+      `SELECT *
+       FROM withdrawals
+       WHERE user_id=$1
+       ORDER BY id DESC`,
+      [req.user.id]
+    );
 
     res.json({
-      success: true,
-      withdrawal: wr.rows[0]
+      withdrawals: r.rows
     });
-
-  } catch (e) {
-
-    await c.query("ROLLBACK");
-
-    console.error(e);
-
-    res.status(500).json({
-      error: "Withdrawal failed."
-    });
-
-  } finally {
-
-    c.release();
   }
-});
-
-
-app.get("/api/withdrawals", auth, async (req, res) => {
-
-  const r = await q(
-    `
-    SELECT *
-    FROM withdrawals
-    WHERE user_id=$1
-    ORDER BY id DESC
-    `,
-    [req.user.id]
-  );
-
-  res.json({
-    withdrawals: r.rows
-  });
-});
-
+);
 
 /* =========================================================
    ADMIN SETTINGS
 ========================================================= */
 
-app.get("/api/admin/settings", admin, async (req, res) => {
-
-  res.json({
-    settings: await settings(),
-    themes: THEMES
-  });
-});
-
-
-app.put("/api/admin/settings", admin, async (req, res) => {
-
-  const allowed = [
-    "app_name",
-    "logo_url",
-    "global_theme",
-    "allow_user_theme",
-    "referral_reward",
-    "minimum_withdraw",
-    "withdraw_fee",
-    "announcement",
-    "maintenance",
-    "telegram_channel"
-  ];
-
-  const v = {};
-
-  for (const k of allowed) {
-
-    if (
-      Object.prototype.hasOwnProperty.call(
-        req.body,
-        k
-      )
-    ) {
-      v[k] = req.body[k];
-    }
-  }
-
-  if (
-    v.global_theme &&
-    !THEMES[String(v.global_theme)]
-  ) {
-
-    return res.status(400).json({
-      error: "Invalid theme."
+app.get(
+  "/api/admin/settings",
+  admin,
+  async (req, res) => {
+    res.json({
+      settings: await settings(),
+      themes: THEMES
     });
   }
+);
 
-  await saveSettings(v);
+app.put(
+  "/api/admin/settings",
+  admin,
+  async (req, res) => {
+    const allowed = [
+      "app_name",
+      "logo_url",
+      "global_theme",
+      "allow_user_theme",
+      "referral_reward",
+      "minimum_withdraw",
+      "withdraw_fee",
+      "announcement",
+      "maintenance",
+      "telegram_channel"
+    ];
 
-  res.json({
-    success: true,
-    settings: await settings()
-  });
-});
+    const values = {};
 
+    for (const key of allowed) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          req.body,
+          key
+        )
+      ) {
+        values[key] =
+          req.body[key];
+      }
+    }
+
+    if (
+      values.global_theme &&
+      !THEMES[
+        String(values.global_theme)
+      ]
+    ) {
+      return res.status(400).json({
+        error: "Invalid theme."
+      });
+    }
+
+    await saveSettings(values);
+
+    res.json({
+      success: true,
+      settings: await settings()
+    });
+  }
+);
 
 /* =========================================================
    ADMIN TASKS
 ========================================================= */
 
-app.get("/api/admin/tasks", admin, async (req, res) => {
+app.get(
+  "/api/admin/tasks",
+  admin,
+  async (req, res) => {
+    res.json({
+      tasks: (
+        await q(
+          "SELECT * FROM tasks ORDER BY id DESC"
+        )
+      ).rows
+    });
+  }
+);
 
-  res.json({
-    tasks: (
-      await q(
-        "SELECT * FROM tasks ORDER BY id DESC"
+app.post(
+  "/api/admin/tasks",
+  admin,
+  async (req, res) => {
+    const title =
+      String(req.body.title || "").trim();
+
+    const description =
+      String(
+        req.body.description || ""
+      ).trim();
+
+    const url =
+      String(req.body.url || "").trim();
+
+    const reward =
+      Number(req.body.reward || 0);
+
+    const type =
+      String(
+        req.body.task_type || "custom"
+      ).trim();
+
+    if (!title) {
+      return res.status(400).json({
+        error: "Task title is required."
+      });
+    }
+
+    if (
+      !Number.isFinite(reward) ||
+      reward < 0
+    ) {
+      return res.status(400).json({
+        error: "Invalid reward."
+      });
+    }
+
+    const r = await q(
+      `INSERT INTO tasks(
+        title,
+        description,
+        url,
+        reward,
+        task_type,
+        active
       )
-    ).rows
-  });
-});
-
-
-app.post("/api/admin/tasks", admin, async (req, res) => {
-
-  const title =
-    String(req.body.title || "").trim();
-
-  const description =
-    String(req.body.description || "").trim();
-
-  const url =
-    String(req.body.url || "").trim();
-
-  const reward =
-    Number(req.body.reward || 0);
-
-  const type =
-    String(req.body.task_type || "custom").trim();
-
-  if (!title) {
-
-    return res.status(400).json({
-      error: "Task title is required."
-    });
-  }
-
-  if (!Number.isFinite(reward) || reward < 0) {
-
-    return res.status(400).json({
-      error: "Invalid reward."
-    });
-  }
-
-  const r = await q(
-    `
-    INSERT INTO tasks(
-      title,
-      description,
-      url,
-      reward,
-      task_type,
-      active
-    )
-    VALUES($1,$2,$3,$4,$5,TRUE)
-    RETURNING *
-    `,
-    [
-      title,
-      description,
-      url,
-      reward,
-      type
-    ]
-  );
-
-  res.json({
-    success: true,
-    task: r.rows[0]
-  });
-});
-
-
-app.put("/api/admin/tasks/:id", admin, async (req, res) => {
-
-  const id = Number(req.params.id);
-
-  const old = (
-    await q(
-      "SELECT * FROM tasks WHERE id=$1",
-      [id]
-    )
-  ).rows[0];
-
-  if (!old) {
-
-    return res.status(404).json({
-      error: "Task not found."
-    });
-  }
-
-  const title =
-    String(
-      req.body.title ?? old.title
-    ).trim();
-
-  const description =
-    String(
-      req.body.description ?? old.description
-    ).trim();
-
-  const url =
-    String(
-      req.body.url ?? old.url
-    ).trim();
-
-  const reward =
-    Number(
-      req.body.reward ?? old.reward
+      VALUES($1,$2,$3,$4,$5,TRUE)
+      RETURNING *`,
+      [
+        title,
+        description,
+        url,
+        reward,
+        type
+      ]
     );
 
-  const type =
-    String(
-      req.body.task_type ?? old.task_type
-    ).trim();
-
-  const active =
-    req.body.active === undefined
-      ? Boolean(old.active)
-      : Boolean(req.body.active);
-
-  if (
-    !title ||
-    !Number.isFinite(reward) ||
-    reward < 0
-  ) {
-
-    return res.status(400).json({
-      error: "Invalid task data."
+    res.json({
+      success: true,
+      task: r.rows[0]
     });
   }
+);
 
-  const r = await q(
-    `
-    UPDATE tasks
-    SET
-      title=$1,
-      description=$2,
-      url=$3,
-      reward=$4,
-      task_type=$5,
-      active=$6
-    WHERE id=$7
-    RETURNING *
-    `,
-    [
-      title,
-      description,
-      url,
-      reward,
-      type,
-      active,
-      id
-    ]
-  );
+app.put(
+  "/api/admin/tasks/:id",
+  admin,
+  async (req, res) => {
+    const id =
+      Number(req.params.id);
 
-  res.json({
-    success: true,
-    task: r.rows[0]
-  });
-});
+    const old =
+      (
+        await q(
+          "SELECT * FROM tasks WHERE id=$1",
+          [id]
+        )
+      ).rows[0];
 
+    if (!old) {
+      return res.status(404).json({
+        error: "Task not found."
+      });
+    }
 
-app.delete("/api/admin/tasks/:id", admin, async (req, res) => {
+    const title =
+      String(
+        req.body.title ??
+        old.title
+      ).trim();
 
-  const id = Number(req.params.id);
+    const description =
+      String(
+        req.body.description ??
+        old.description
+      ).trim();
 
-  if (!Number.isInteger(id)) {
+    const url =
+      String(
+        req.body.url ??
+        old.url
+      ).trim();
 
-    return res.status(400).json({
-      error: "Invalid task ID."
+    const reward =
+      Number(
+        req.body.reward ??
+        old.reward
+      );
+
+    const type =
+      String(
+        req.body.task_type ??
+        old.task_type
+      ).trim();
+
+    const active =
+      req.body.active === undefined
+        ? Boolean(old.active)
+        : Boolean(req.body.active);
+
+    if (
+      !title ||
+      !Number.isFinite(reward) ||
+      reward < 0
+    ) {
+      return res.status(400).json({
+        error: "Invalid task data."
+      });
+    }
+
+    const r = await q(
+      `UPDATE tasks
+       SET title=$1,
+           description=$2,
+           url=$3,
+           reward=$4,
+           task_type=$5,
+           active=$6
+       WHERE id=$7
+       RETURNING *`,
+      [
+        title,
+        description,
+        url,
+        reward,
+        type,
+        active,
+        id
+      ]
+    );
+
+    res.json({
+      success: true,
+      task: r.rows[0]
     });
   }
+);
 
-  await q(
-    "DELETE FROM tasks WHERE id=$1",
-    [id]
-  );
+app.delete(
+  "/api/admin/tasks/:id",
+  admin,
+  async (req, res) => {
+    const id =
+      Number(req.params.id);
 
-  res.json({
-    success: true
-  });
-});
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({
+        error: "Invalid task ID."
+      });
+    }
 
+    await q(
+      "DELETE FROM tasks WHERE id=$1",
+      [id]
+    );
+
+    res.json({
+      success: true
+    });
+  }
+);
 
 /* =========================================================
    ADMIN USERS
 ========================================================= */
 
-app.get("/api/admin/users", admin, async (req, res) => {
+app.get(
+  "/api/admin/users",
+  admin,
+  async (req, res) => {
+    const r = await q(
+      `SELECT
+         id,
+         telegram_id,
+         username,
+         first_name,
+         last_name,
+         balance,
+         total_earned,
+         tasks_done,
+         referrals,
+         blocked,
+         created_at
+       FROM users
+       ORDER BY id DESC`
+    );
 
-  const r = await q(
-    `
-    SELECT
-      id,
-      telegram_id,
-      username,
-      first_name,
-      last_name,
-      balance,
-      total_earned,
-      tasks_done,
-      referrals,
-      blocked,
-      created_at
-    FROM users
-    ORDER BY id DESC
-    `
-  );
+    res.json({
+      users: r.rows
+    });
+  }
+);
 
-  res.json({
-    users: r.rows
-  });
-});
+app.put(
+  "/api/admin/users/:telegramId",
+  admin,
+  async (req, res) => {
+    const updates = [];
+    const values = [];
 
+    if (req.body.balance !== undefined) {
+      const balance =
+        Number(req.body.balance);
 
-app.put("/api/admin/users/:telegramId", admin, async (req, res) => {
+      if (
+        !Number.isFinite(balance) ||
+        balance < 0
+      ) {
+        return res.status(400).json({
+          error: "Invalid balance."
+        });
+      }
 
-  const updates = [];
-  const vals = [];
+      values.push(balance);
 
-  if (req.body.balance !== undefined) {
+      updates.push(
+        `balance=$${values.length}`
+      );
+    }
 
-    const b = Number(req.body.balance);
+    if (
+      req.body.blocked !== undefined
+    ) {
+      values.push(
+        Boolean(req.body.blocked)
+      );
 
-    if (!Number.isFinite(b) || b < 0) {
+      updates.push(
+        `blocked=$${values.length}`
+      );
+    }
 
+    if (!updates.length) {
       return res.status(400).json({
-        error: "Invalid balance."
+        error: "Nothing to update."
       });
     }
 
-    vals.push(b);
-
-    updates.push(
-      `balance=$${vals.length}`
+    values.push(
+      String(req.params.telegramId)
     );
-  }
 
-  if (req.body.blocked !== undefined) {
-
-    vals.push(Boolean(req.body.blocked));
-
-    updates.push(
-      `blocked=$${vals.length}`
+    await q(
+      `UPDATE users
+       SET ${updates.join(",")},
+           updated_at=NOW()
+       WHERE telegram_id=$${values.length}`,
+      values
     );
-  }
 
-  if (!updates.length) {
-
-    return res.status(400).json({
-      error: "Nothing to update."
+    res.json({
+      success: true
     });
   }
-
-  vals.push(String(req.params.telegramId));
-
-  await q(
-    `
-    UPDATE users
-    SET
-      ${updates.join(",")},
-      updated_at=NOW()
-    WHERE telegram_id=$${vals.length}
-    `,
-    vals
-  );
-
-  res.json({
-    success: true
-  });
-});
-
+);
 
 /* =========================================================
    ADMIN WITHDRAWALS
 ========================================================= */
 
-app.get("/api/admin/withdrawals", admin, async (req, res) => {
-
-  const r = await q(
-    `
-    SELECT
-      w.*,
-      u.telegram_id,
-      u.username,
-      u.first_name
-    FROM withdrawals w
-    JOIN users u
-      ON u.id=w.user_id
-    ORDER BY w.id DESC
-    `
-  );
-
-  res.json({
-    withdrawals: r.rows
-  });
-});
-
-
-app.put("/api/admin/withdrawals/:id", admin, async (req, res) => {
-
-  const id = Number(req.params.id);
-
-  const status =
-    String(req.body.status || "");
-
-  if (!["paid", "rejected"].includes(status)) {
-
-    return res.status(400).json({
-      error: "Invalid withdrawal status."
-    });
-  }
-
-  const c = await pool.connect();
-
-  try {
-
-    await c.query("BEGIN");
-
-    const r = await c.query(
-      `
-      SELECT *
-      FROM withdrawals
-      WHERE id=$1
-      FOR UPDATE
-      `,
-      [id]
+app.get(
+  "/api/admin/withdrawals",
+  admin,
+  async (req, res) => {
+    const r = await q(
+      `SELECT
+         w.*,
+         u.telegram_id,
+         u.username,
+         u.first_name
+       FROM withdrawals w
+       JOIN users u
+         ON u.id=w.user_id
+       ORDER BY w.id DESC`
     );
-
-    if (!r.rows.length) {
-
-      await c.query("ROLLBACK");
-
-      return res.status(404).json({
-        error: "Withdrawal not found."
-      });
-    }
-
-    const w = r.rows[0];
-
-    if (w.status !== "pending") {
-
-      await c.query("ROLLBACK");
-
-      return res.status(400).json({
-        error: "Withdrawal already processed."
-      });
-    }
-
-    await c.query(
-      `
-      UPDATE withdrawals
-      SET
-        status=$1,
-        updated_at=NOW()
-      WHERE id=$2
-      `,
-      [status, id]
-    );
-
-    if (status === "rejected") {
-
-      await c.query(
-        `
-        UPDATE users
-        SET
-          balance=balance+$1,
-          updated_at=NOW()
-        WHERE id=$2
-        `,
-        [
-          Number(w.amount),
-          w.user_id
-        ]
-      );
-    }
-
-    await c.query("COMMIT");
 
     res.json({
-      success: true
+      withdrawals: r.rows
     });
-
-  } catch (e) {
-
-    await c.query("ROLLBACK");
-
-    console.error(e);
-
-    res.status(500).json({
-      error: "Unable to update withdrawal."
-    });
-
-  } finally {
-
-    c.release();
   }
-});
+);
 
+app.put(
+  "/api/admin/withdrawals/:id",
+  admin,
+  async (req, res) => {
+    const id =
+      Number(req.params.id);
+
+    const status =
+      String(
+        req.body.status || ""
+      );
+
+    if (
+      !["paid", "rejected"]
+        .includes(status)
+    ) {
+      return res.status(400).json({
+        error:
+          "Invalid withdrawal status."
+      });
+    }
+
+    const connection =
+      await pool.connect();
+
+    try {
+      await connection.query("BEGIN");
+
+      const r =
+        await connection.query(
+          `SELECT *
+           FROM withdrawals
+           WHERE id=$1
+           FOR UPDATE`,
+          [id]
+        );
+
+      if (!r.rows.length) {
+        await connection.query(
+          "ROLLBACK"
+        );
+
+        return res.status(404).json({
+          error:
+            "Withdrawal not found."
+        });
+      }
+
+      const withdrawal =
+        r.rows[0];
+
+      if (
+        withdrawal.status !==
+        "pending"
+      ) {
+        await connection.query(
+          "ROLLBACK"
+        );
+
+        return res.status(400).json({
+          error:
+            "Withdrawal already processed."
+        });
+      }
+
+      await connection.query(
+        `UPDATE withdrawals
+         SET status=$1,
+             updated_at=NOW()
+         WHERE id=$2`,
+        [
+          status,
+          id
+        ]
+      );
+
+      if (status === "rejected") {
+        await connection.query(
+          `UPDATE users
+           SET balance=balance+$1,
+               updated_at=NOW()
+           WHERE id=$2`,
+          [
+            Number(
+              withdrawal.amount
+            ),
+            withdrawal.user_id
+          ]
+        );
+      }
+
+      await connection.query(
+        "COMMIT"
+      );
+
+      res.json({
+        success: true
+      });
+    } catch (error) {
+      await connection.query(
+        "ROLLBACK"
+      );
+
+      console.error(error);
+
+      res.status(500).json({
+        error:
+          "Unable to update withdrawal."
+      });
+    } finally {
+      connection.release();
+    }
+  }
+);
 
 /* =========================================================
-   TELEGRAM BOT
+   TELEGRAM API
 ========================================================= */
 
-async function tg(method, body = {}) {
-
+async function tg(
+  method,
+  body = {}
+) {
   if (!BOT_TOKEN) {
-    throw new Error("BOT_TOKEN is missing.");
+    throw new Error(
+      "BOT_TOKEN is missing."
+    );
   }
 
-  const r = await fetch(
-    `https://api.telegram.org/bot${BOT_TOKEN}/${method}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(body)
-    }
-  );
+  const response =
+    await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/${method}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+        body:
+          JSON.stringify(body)
+      }
+    );
 
-  const data = await r.json();
+  const data =
+    await response.json();
 
   if (!data.ok) {
     throw new Error(
-      data.description || "Telegram API error"
+      data.description ||
+      "Telegram API error"
     );
   }
 
   return data.result;
 }
 
-
 async function setupMenu() {
-
-  if (!BOT_TOKEN || !WEBAPP_URL) {
-
+  if (
+    !BOT_TOKEN ||
+    !WEBAPP_URL
+  ) {
     console.log(
-      "BOT_TOKEN or WEBAPP_URL missing. Telegram menu button skipped."
+      "BOT_TOKEN or WEBAPP_URL missing. Telegram menu skipped."
     );
 
     return;
   }
 
   try {
-
     await tg(
       "setChatMenuButton",
       {
@@ -1532,37 +2100,35 @@ async function setupMenu() {
     console.log(
       "Telegram menu button: configured"
     );
-
-  } catch (e) {
-
+  } catch (error) {
     console.error(
       "Telegram menu error:",
-      e.message
+      error.message
     );
   }
 }
-
 
 async function botStart(
   chatId,
   user,
   param = ""
 ) {
+  const u =
+    await getUser(
+      user,
+      param
+    );
 
-  const u = await getUser(
-    user,
-    param
-  );
-
-  const s = await settings();
+  const s =
+    await settings();
 
   if (u.blocked) {
-
     await tg(
       "sendMessage",
       {
         chat_id: chatId,
-        text: "🚫 Your account is blocked."
+        text:
+          "🚫 Your account is blocked."
       }
     );
 
@@ -1575,38 +2141,45 @@ async function botStart(
     "User";
 
   let text =
-`🐝 ${s.app_name}
-
-Welcome, ${name}! 🎉
-
-💰 Balance: ${Number(u.balance).toFixed(2)} USDT
-🎯 Tasks Done: ${u.tasks_done}
-👥 Referrals: ${u.referrals}
-
-👇 নিচের button চাপ দিয়ে Mini App খুলুন।`;
+    `🐝 ${s.app_name}\n\n` +
+    `Welcome, ${name}! 🎉\n\n` +
+    `💰 Balance: ${Number(
+      u.balance
+    ).toFixed(2)} USDT\n` +
+    `🎯 Tasks Done: ${
+      u.tasks_done
+    }\n` +
+    `👥 Referrals: ${
+      u.referrals
+    }\n\n` +
+    `👇 নিচের button চাপ দিয়ে Mini App খুলুন।`;
 
   if (
     ADMIN_ID &&
-    String(user.id) === ADMIN_ID
+    String(user.id) ===
+      ADMIN_ID
   ) {
     text +=
       "\n\n👑 Admin account detected.";
   }
 
-  const markup = WEBAPP_URL
-    ? {
-        inline_keyboard: [
-          [
-            {
-              text: "🐝 Open ST Earn",
-              web_app: {
-                url: WEBAPP_URL
+  const markup =
+    WEBAPP_URL
+      ? {
+          inline_keyboard: [
+            [
+              {
+                text:
+                  "🐝 Open ST Earn",
+                web_app: {
+                  url:
+                    WEBAPP_URL
+                }
               }
-            }
+            ]
           ]
-        ]
-      }
-    : undefined;
+        }
+      : undefined;
 
   await tg(
     "sendMessage",
@@ -1614,21 +2187,24 @@ Welcome, ${name}! 🎉
       chat_id: chatId,
       text,
       ...(markup
-        ? { reply_markup: markup }
+        ? {
+            reply_markup:
+              markup
+          }
         : {})
     }
   );
 }
 
-
 /* =========================================================
-   BOT POLLING
+   TELEGRAM POLLING
 ========================================================= */
 
+let botPollingStarted = false;
+let botPollingStopped = false;
+
 async function startBot() {
-
   if (!BOT_TOKEN) {
-
     console.log(
       "BOT_TOKEN missing. Telegram bot skipped."
     );
@@ -1636,18 +2212,34 @@ async function startBot() {
     return;
   }
 
-  try {
+  if (botPollingStarted) {
+    console.log(
+      "Telegram polling already started."
+    );
 
-    const me = await tg("getMe");
+    return;
+  }
+
+  botPollingStarted = true;
+
+  try {
+    const me =
+      await tg("getMe");
 
     console.log(
       `Telegram bot connected: @${me.username || "unknown"}`
     );
 
+    /*
+      Remove webhook before long polling.
+      Pending updates are preserved.
+    */
+
     await tg(
       "deleteWebhook",
       {
-        drop_pending_updates: false
+        drop_pending_updates:
+          false
       }
     );
 
@@ -1656,71 +2248,96 @@ async function startBot() {
     let offset = 0;
 
     async function poll() {
+      if (botPollingStopped) {
+        return;
+      }
 
       try {
+        const updates =
+          await tg(
+            "getUpdates",
+            {
+              offset,
+              timeout: 25,
+              allowed_updates: [
+                "message"
+              ]
+            }
+          );
 
-        const updates = await tg(
-          "getUpdates",
-          {
-            offset,
-            timeout: 25,
-            allowed_updates: ["message"]
-          }
-        );
+        for (
+          const update of updates
+        ) {
+          offset =
+            Number(
+              update.update_id
+            ) + 1;
 
-        for (const u of updates) {
+          const message =
+            update.message;
 
-          offset = u.update_id + 1;
-
-          const m = u.message;
-
-          if (!m?.chat || !m.from) {
+          if (
+            !message?.chat ||
+            !message?.from
+          ) {
             continue;
           }
 
           const text =
-            String(m.text || "").trim();
+            String(
+              message.text || ""
+            ).trim();
 
-          const match =
+          const startMatch =
             text.match(
               /^\/start(?:@\w+)?(?:\s+(.+))?$/i
             );
 
-          if (match) {
-
+          if (startMatch) {
             await botStart(
-              m.chat.id,
-              m.from,
-              match[1] || ""
+              message.chat.id,
+              message.from,
+              startMatch[1] ||
+                ""
             );
 
-          } else if (
-            /^\/help(?:@\w+)?$/i.test(text)
-          ) {
+            continue;
+          }
 
+          if (
+            /^\/help(?:@\w+)?$/i.test(
+              text
+            )
+          ) {
             await tg(
               "sendMessage",
               {
-                chat_id: m.chat.id,
+                chat_id:
+                  message.chat.id,
                 text:
-`🐝 ST Earn Help
-
-/start — Open ST Earn
-/help — Show help`
+                  "🐝 ST Earn Help\n\n" +
+                  "/start — Open ST Earn\n" +
+                  "/help — Show help"
               }
             );
           }
         }
-
-      } catch (e) {
-
+      } catch (error) {
         console.error(
           "Telegram polling error:",
-          e.message
+          error.message
         );
 
+        /*
+          Prevent a tight retry loop.
+        */
+
         await new Promise(
-          r => setTimeout(r, 3000)
+          (resolve) =>
+            setTimeout(
+              resolve,
+              5000
+            )
         );
       }
 
@@ -1732,16 +2349,15 @@ async function startBot() {
     console.log(
       "Telegram bot polling started."
     );
-
-  } catch (e) {
+  } catch (error) {
+    botPollingStarted = false;
 
     console.error(
       "Telegram bot startup failed:",
-      e.message
+      error.message
     );
   }
 }
-
 
 /* =========================================================
    FRONTEND
@@ -1749,12 +2365,14 @@ async function startBot() {
 
 app.use(
   express.static(
-    path.join(__dirname, "public")
+    path.join(
+      __dirname,
+      "public"
+    )
   )
 );
 
 app.get("*", (req, res) => {
-
   res.sendFile(
     path.join(
       __dirname,
@@ -1764,15 +2382,12 @@ app.get("*", (req, res) => {
   );
 });
 
-
 /* =========================================================
    START SERVER
 ========================================================= */
 
 async function start() {
-
   try {
-
     if (!DATABASE_URL) {
       throw new Error(
         "DATABASE_URL is missing."
@@ -1791,17 +2406,29 @@ async function start() {
       }
     );
 
+    /*
+      Start first Wingo sync.
+      Failure here does NOT stop the website.
+    */
+
+    syncWingo().catch(
+      (error) => {
+        console.error(
+          "Initial Wingo sync failed:",
+          error.message
+        );
+      }
+    );
+
     await startBot();
 
     console.log(
       "ST Earn startup completed."
     );
-
-  } catch (e) {
-
+  } catch (error) {
     console.error(
       "Server startup failed:",
-      e
+      error
     );
 
     process.exit(1);
